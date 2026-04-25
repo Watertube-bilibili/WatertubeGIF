@@ -5,6 +5,7 @@ import { GifEncoder, GifResult, GifSettings } from '../services/GifEncoder';
 
 class PreviewParams {
   outputPath: string = '';
+  sourceName: string = '';
   width: number = 0;
   height: number = 0;
   frames: number = 0;
@@ -71,6 +72,7 @@ struct ConvertPage {
 
     let params: PreviewParams = new PreviewParams();
     params.outputPath = result.path;
+    params.sourceName = this.sourceName;
     params.width = result.width;
     params.height = result.height;
     params.frames = result.frames;
