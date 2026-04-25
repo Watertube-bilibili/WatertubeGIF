@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "水管GIF"
+    },
+    {
+      "name": "app_description",
+      "value": "一款简洁高效的视频/动图转GIF工具，支持自定义帧率、分辨率、画质等参数"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "视频转 GIF 工具"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "水管 GIF"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "水管 GIF"
+    },
+    {
+      "name": "permission_write_imagevideo",
+      "value": "用于把转换后的 GIF 保存到系统相册"
+    }
+  ]
+}
