@@ -219,6 +219,13 @@ export class GifBinaryEncoder {
 
 export async function readPixelMapRgba(pixelMap: image.PixelMap, width: number, height: number): Promise<Uint8Array> {
   let info: image.ImageInfo = await pixelMap.getImageInfo();
+  if (info.pixelFormat !== image.PixelMapFormat.RGBA_8888) {
+    try {
+      await pixelMap.convertPixelFormat(image.PixelMapFormat.RGBA_8888);
+      info = await pixelMap.getImageInfo();
+    } catch (_err) {
+    }
+  }
   let actualW: number = info.size.width;
   let actualH: number = info.size.height;
   let rowStride: number = pixelMap.getBytesNumberPerRow();
@@ -226,8 +233,9 @@ export async function readPixelMapRgba(pixelMap: image.PixelMap, width: number, 
   let raw: ArrayBuffer = new ArrayBuffer(Math.max(pixelBytes, rowStride * actualH));
   await pixelMap.readPixelsToBuffer(raw);
   let bytes: Uint8Array = new Uint8Array(raw);
+  let bgra: boolean = info.pixelFormat === image.PixelMapFormat.BGRA_8888;
 
-  if (actualW === width && actualH === height && rowStride === actualW * 4) {
+  if (!bgra && actualW === width && actualH === height && rowStride === actualW * 4) {
     return bytes.slice(0, width * height * 4);
   }
 
@@ -238,9 +246,9 @@ export async function readPixelMapRgba(pixelMap: image.PixelMap, width: number, 
       let sx: number = Math.min(actualW - 1, Math.floor(x * actualW / width));
       let src: number = sy * rowStride + sx * 4;
       let dst: number = (y * width + x) * 4;
-      result[dst] = bytes[src];
+      result[dst] = bgra ? bytes[src + 2] : bytes[src];
       result[dst + 1] = bytes[src + 1];
-      result[dst + 2] = bytes[src + 2];
+      result[dst + 2] = bgra ? bytes[src] : bytes[src + 2];
       result[dst + 3] = bytes[src + 3];
     }
   }
