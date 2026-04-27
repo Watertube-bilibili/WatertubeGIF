@@ -92,6 +92,12 @@ struct Index {
     });
   }
 
+  private async clearHistory(): Promise<void> {
+    await AppStateService.clearHistory(this.ctx);
+    this.history = [];
+    promptAction.showToast({ message: '历史记录已清空', duration: 1400 });
+  }
+
   private formatTime(value: number): string {
     let date: Date = new Date(value);
     return (date.getMonth() + 1) + '/' + date.getDate() + ' ' +
@@ -137,6 +143,16 @@ struct Index {
             Text(this.history.length + ' 条')
               .fontSize(13)
               .fontColor(Theme.textSecondary(this.colorMode === 0))
+            if (this.history.length > 0) {
+              Button('清空')
+                .height(30)
+                .fontSize(12)
+                .fontWeight(700)
+                .fontColor(Theme.warning())
+                .backgroundColor(Color.Transparent)
+                .margin({ left: 8 })
+                .onClick(() => { this.clearHistory(); })
+            }
           }
           .width('100%')
           .margin({ bottom: 14 })

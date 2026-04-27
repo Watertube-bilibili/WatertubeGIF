@@ -60,4 +60,10 @@ export class AppStateService {
     await store.put(KEY_HISTORY, JSON.stringify(history));
     await store.flush();
   }
+
+  static async clearHistory(ctx: common.UIAbilityContext): Promise<void> {
+    let store: preferences.Preferences = await AppStateService.store(ctx);
+    await store.put(KEY_HISTORY, '[]');
+    await store.flush();
+  }
 }
