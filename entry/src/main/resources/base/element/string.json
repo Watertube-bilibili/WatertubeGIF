@@ -15,6 +15,10 @@
     {
       "name": "permission_write_imagevideo",
       "value": "用于把转换后的 GIF 保存到系统相册"
+    },
+    {
+      "name": "permission_keep_background_running",
+      "value": "用于在转换 GIF 时保持后台任务运行"
     }
   ]
 }

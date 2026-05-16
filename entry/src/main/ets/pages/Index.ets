@@ -1,9 +1,10 @@
-import { common } from '@kit.AbilityKit';
+﻿import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
+import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 
 class ConvertParams {
   sourceUri: string = '';
@@ -23,6 +24,8 @@ struct Index {
   @State showSupportDialog: boolean = false;
   @State skipSupportSevenDays: boolean = false;
   @State isPicking: boolean = false;
+  @State listOpacity: number = 0;
+  @State listTranslateY: number = 20;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
 
@@ -33,6 +36,12 @@ struct Index {
   private async refreshHome(): Promise<void> {
     this.history = await AppStateService.loadHistory(this.ctx);
     this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
+    
+    // Staggered appearance animation
+    animateTo({ duration: 800, curve: Curve.FastOutSlowIn }, () => {
+      this.listOpacity = 1;
+      this.listTranslateY = 0;
+    })
   }
 
   private async startConvert(): Promise<void> {
@@ -106,185 +115,297 @@ struct Index {
   }
 
   build() {
-    Stack() {
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          angle: 150,
-          colors: [[this.colorMode === 0 ? '#07111F' : '#F7FBFF', 0], [this.colorMode === 0 ? '#10213A' : '#EAF4FF', 0.62], [this.colorMode === 0 ? '#071018' : '#FFF7FA', 1]]
-        })
-
-      Column() {
-        Row() {
-          Column() {
-            Text('水管 GIF')
-              .fontSize(34)
-              .fontWeight(900)
-              .fontColor(Theme.textPrimary(this.colorMode === 0))
-            Text('视频转动图，轻量、清晰、能保存')
-              .fontSize(14)
-              .fontColor(Theme.textSecondary(this.colorMode === 0))
-              .margin({ top: 6 })
-          }
-          .alignItems(HorizontalAlign.Start)
-          Blank()
-        }
-        .width('100%')
-        .padding({ left: 24, right: 24, top: 26, bottom: 18 })
-
-        Column() {
-          Row() {
-            Text('转换历史')
-              .fontSize(20)
-              .fontWeight(850)
-              .fontColor(Theme.textPrimary(this.colorMode === 0))
-            Blank()
-            Text(this.history.length + ' 条')
-              .fontSize(13)
-              .fontColor(Theme.textSecondary(this.colorMode === 0))
-            if (this.history.length > 0) {
-              Button('清空')
-                .height(30)
-                .fontSize(12)
-                .fontWeight(700)
-                .fontColor(Theme.warning())
-                .backgroundColor(Color.Transparent)
-                .margin({ left: 8 })
-                .onClick(() => { this.clearHistory(); })
-            }
-          }
-          .width('100%')
-          .margin({ bottom: 14 })
-
-          if (this.history.length === 0) {
-            Column() {
-              Text('还没有转换记录')
-                .fontSize(18)
-                .fontWeight(800)
-                .fontColor(Theme.textPrimary(this.colorMode === 0))
-              Text('点右下角按钮选择视频，转换完成后会显示在这里。')
-                .fontSize(13)
-                .fontColor(Theme.textSecondary(this.colorMode === 0))
-                .textAlign(TextAlign.Center)
-                .margin({ top: 8 })
-            }
-            .width('100%')
-            .height(220)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-            .borderRadius(24)
-            .backgroundColor(Theme.panelBg(this.colorMode === 0))
-            .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-          } else {
-            ForEach(this.history, (item: HistoryItem) => {
-              Row() {
-                Column() {
-                  Text(item.title.length > 0 ? item.title : 'GIF 结果')
-                    .fontSize(16)
-                    .fontWeight(800)
-                    .fontColor(Theme.textPrimary(this.colorMode === 0))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(item.width + '×' + item.height + ' · ' + item.frames + '帧 · ' + MediaService.formatBytes(item.size))
-                    .fontSize(12)
-                    .fontColor(Theme.textSecondary(this.colorMode === 0))
-                    .margin({ top: 5 })
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-                Text(this.formatTime(item.createdAt))
-                  .fontSize(12)
-                  .fontColor(Theme.textSecondary(this.colorMode === 0))
-              }
-              .width('100%')
-              .padding(16)
-              .borderRadius(18)
-              .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-              .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-              .margin({ bottom: 10 })
-              .onClick(() => { this.openHistory(item); })
-            }, (item: HistoryItem) => item.id)
-          }
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20 })
-        .layoutWeight(1)
-      }
-      .width('100%')
-      .height('100%')
-
-      Button(this.isPicking ? '选择中' : '+')
-        .width(this.isPicking ? 88 : 64)
-        .height(64)
-        .fontSize(this.isPicking ? 15 : 32)
-        .fontWeight(900)
-        .fontColor(Color.White)
-        .borderRadius(32)
-        .backgroundColor(Theme.accent())
-        .shadow({ radius: 26, color: 'rgba(47,125,255,0.38)', offsetX: 0, offsetY: 14 })
-        .position({ right: 24, bottom: 30 })
-        .onClick(() => { this.startConvert(); })
-
-      if (this.showSupportDialog) {
+    Navigation() {
+      Stack() {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.34)')
+          .linearGradient({
+            angle: 150,
+            colors: [
+              [this.colorMode === 0 ? '#0F172A' : '#F8FAFC', 0],
+              [this.colorMode === 0 ? '#1E293B' : '#EFF6FF', 0.5],
+              [this.colorMode === 0 ? '#0F172A' : '#F1F5F9', 1]
+            ]
+          })
 
-        Column() {
-          Text('为水管系列应用发电')
-            .fontSize(22)
-            .fontWeight(900)
-            .fontColor(Theme.textPrimary(this.colorMode === 0))
-          Text('开发和维护都不容易，如果这个工具帮到了你，欢迎给我们一点支持，让水管系列应用继续更新。')
-            .fontSize(14)
-            .lineHeight(22)
-            .fontColor(Theme.textSecondary(this.colorMode === 0))
-            .textAlign(TextAlign.Center)
-            .margin({ top: 14, bottom: 22 })
-
-          Button('一键发电')
+        Scroll() {
+          Column() {
+            Row() {
+              Column() {
+                Text('水管 GIF')
+                  .fontSize(38)
+                  .fontWeight(900)
+                  .fontColor(Theme.textPrimary(this.colorMode === 0))
+                  .letterSpacing(1)
+                Text('轻量、清晰、动图转换专家')
+                  .fontSize(14)
+                  .fontWeight(500)
+                  .fontColor(Theme.textSecondary(this.colorMode === 0))
+                  .margin({ top: 8 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              Blank()
+              
+              SymbolBySymbolName({ 
+                name: 'video.fill.badge.plus', 
+                fontSize: 42, 
+                fontColor: Theme.accent() 
+              })
+                .opacity(0.12)
+                .rotate({ angle: -15 })
+            }
             .width('100%')
-            .height(50)
-            .fontSize(17)
-            .fontWeight(850)
-            .fontColor(Color.White)
-            .borderRadius(25)
-            .backgroundColor(Theme.accent())
-            .onClick(() => { this.supportNow(); })
+            .padding({ left: 24, right: 24, top: 40, bottom: 24 })
 
-          Row() {
-            Toggle({ type: ToggleType.Checkbox, isOn: this.skipSupportSevenDays })
-              .width(18)
-              .height(18)
-              .selectedColor(Theme.accent())
-              .onChange((checked: boolean) => { this.skipSupportSevenDays = checked; })
-            Text('七天内不再显示')
-              .fontSize(12)
-              .fontColor(Theme.textSecondary(this.colorMode === 0))
-              .margin({ left: 6 })
-            Blank()
-            Button('关闭')
-              .fontSize(13)
-              .fontColor(Theme.textSecondary(this.colorMode === 0))
-              .backgroundColor(Color.Transparent)
-              .onClick(() => { this.closeSupportDialog(); })
+            Column() {
+              Row() {
+                Text('最近记录')
+                  .fontSize(22)
+                  .fontWeight(800)
+                  .fontColor(Theme.textPrimary(this.colorMode === 0))
+                Blank()
+                if (this.history.length > 0) {
+                  Text(this.history.length + ' 项')
+                    .fontSize(14)
+                    .fontColor(Theme.textSecondary(this.colorMode === 0))
+                    .margin({ right: 12 })
+                  
+                  Button() {
+                    SymbolBySymbolName({ name: 'trash.fill', fontSize: 16, fontColor: Theme.rose() })
+                  }
+                  .width(32)
+                  .height(32)
+                  .backgroundColor(this.colorMode === 0 ? 'rgba(240,106,138,0.1)' : 'rgba(240,106,138,0.05)')
+                  .borderRadius(16)
+                  .onClick(() => { this.clearHistory(); })
+                }
+              }
+              .width('100%')
+              .margin({ bottom: 20, top: 12 })
+
+              if (this.history.length === 0) {
+                Column() {
+                  SymbolBySymbolName({ 
+                    name: 'photo.on.rectangle.angled', 
+                    fontSize: 64, 
+                    fontColor: Theme.textPrimary(this.colorMode === 0) 
+                  })
+                    .opacity(0.15)
+                    .margin({ bottom: 20 })
+                  Text('暂无转换历史')
+                    .fontSize(18)
+                    .fontWeight(700)
+                    .fontColor(Theme.textPrimary(this.colorMode === 0))
+                  Text('开始你的第一个 GIF 创作吧')
+                    .fontSize(14)
+                    .fontColor(Theme.textSecondary(this.colorMode === 0))
+                    .textAlign(TextAlign.Center)
+                    .margin({ top: 8 })
+                }
+                .width('100%')
+                .padding(40)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                .borderRadius(28)
+                .backgroundColor(Theme.panelBg(this.colorMode === 0))
+                .backgroundBlurStyle(Theme.blurStyle(this.colorMode === 0))
+                .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+              } else {
+                List({ space: 12 }) {
+                  ForEach(this.history, (item: HistoryItem, index: number) => {
+                    ListItem() {
+                      Row() {
+                        Column() {
+                          SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 22, fontColor: Theme.accent() })
+                        }
+                        .width(52)
+                        .height(52)
+                        .borderRadius(14)
+                        .backgroundColor(this.colorMode === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)')
+                        .justifyContent(FlexAlign.Center)
+                        .alignItems(HorizontalAlign.Center)
+                        .margin({ right: 16 })
+
+                        Column() {
+                          Text(item.title.length > 0 ? item.title : '未命名动图')
+                            .fontSize(16)
+                            .fontWeight(700)
+                            .fontColor(Theme.textPrimary(this.colorMode === 0))
+                            .maxLines(1)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          Text(item.width + '脳' + item.height + ' 路 ' + MediaService.formatBytes(item.size))
+                            .fontSize(12)
+                            .fontColor(Theme.textSecondary(this.colorMode === 0))
+                            .margin({ top: 4 })
+                        }
+                        .alignItems(HorizontalAlign.Start)
+                        .layoutWeight(1)
+                        
+                        Column() {
+                          Text(this.formatTime(item.createdAt))
+                            .fontSize(11)
+                            .fontColor(Theme.textSecondary(this.colorMode === 0))
+                        }
+                        .alignItems(HorizontalAlign.End)
+                      }
+                      .width('100%')
+                      .padding(16)
+                      .borderRadius(24)
+                      .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+                      .backgroundBlurStyle(Theme.blurStyle(this.colorMode === 0))
+                      .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+                      .shadow({ radius: 12, color: 'rgba(0,0,0,0.04)', offsetX: 0, offsetY: 4 })
+                      .onClick(() => { this.openHistory(item); })
+                    }
+                    .transition(TransitionEffect.asymmetric(
+                      TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 20 })),
+                      TransitionEffect.OPACITY
+                    ))
+                  }, (item: HistoryItem) => item.id)
+                }
+                .width('100%')
+                .opacity(this.listOpacity)
+                .translate({ y: this.listTranslateY })
+              }
+            }
+            .width('100%')
+            .padding({ left: 20, right: 20, bottom: 120 })
           }
-          .width('100%')
-          .margin({ top: 16 })
         }
-        .width('calc(100% - 48px)')
-        .padding(24)
-        .borderRadius(26)
-        .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-        .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-        .shadow({ radius: 34, color: 'rgba(0,0,0,0.22)', offsetX: 0, offsetY: 18 })
-        .alignItems(HorizontalAlign.Center)
+        .scrollBar(BarState.Off)
+        .width('100%')
+        .height('100%')
+
+        // Modern FAB
+        Button() {
+          Row() {
+            if (this.isPicking) {
+              LoadingProgress()
+                .width(24)
+                .height(24)
+                .color(Color.White)
+                .margin({ right: 8 })
+              Text('请稍候')
+                .fontSize(16)
+                .fontWeight(700)
+                .fontColor(Color.White)
+            } else {
+              SymbolBySymbolName({ 
+                name: 'plus', 
+                fontSize: 26, 
+                fontWeight: 800, 
+                fontColor: Color.White,
+                effectStrategy: SymbolEffectStrategy.NONE
+              })
+                .margin({ right: this.history.length === 0 ? 8 : 0 })
+              if (this.history.length === 0) {
+                Text('立即转换')
+                  .fontSize(16)
+                  .fontWeight(700)
+                  .fontColor(Color.White)
+              }
+            }
+          }
+        }
+        .width(this.isPicking || this.history.length === 0 ? 150 : 68)
+        .height(68)
+        .borderRadius(34)
+        .backgroundColor(Theme.accent())
+        .shadow({ radius: 30, color: 'rgba(47,125,255,0.45)', offsetX: 0, offsetY: 15 })
+        .position({ right: 24, bottom: 40 })
+        .onClick(() => { this.startConvert(); })
+        .animation({ duration: 400, curve: Curve.Friction })
+
+        if (this.showSupportDialog) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.5)')
+            .transition(TransitionEffect.OPACITY.animation({ duration: 300 }))
+            .onClick(() => { this.closeSupportDialog(); })
+
+          Column() {
+            // Decoration for dialog
+            Column() {
+              SymbolBySymbolName({ 
+                name: 'heart.fill', 
+                fontSize: 44, 
+                fontColor: Theme.rose(),
+                effectStrategy: SymbolEffectStrategy.NONE
+              })
+            }
+            .width(88)
+            .height(88)
+            .borderRadius(44)
+            .backgroundColor(this.colorMode === 0 ? 'rgba(240,106,138,0.18)' : 'rgba(240,106,138,0.12)')
+            .justifyContent(FlexAlign.Center)
+            .margin({ bottom: 24 })
+
+            Text('支持开发者')
+              .fontSize(26)
+              .fontWeight(900)
+              .fontColor(Theme.textPrimary(this.colorMode === 0))
+            Text('每一份支持都是我们持续优化水管系列应用（轻量、无广告）的最大动力。')
+              .fontSize(15)
+              .lineHeight(24)
+              .fontColor(Theme.textSecondary(this.colorMode === 0))
+              .textAlign(TextAlign.Center)
+              .margin({ top: 14, bottom: 32 })
+
+            Button('前往支持')
+              .width('100%')
+              .height(58)
+              .fontSize(18)
+              .fontWeight(800)
+              .fontColor(Color.White)
+              .borderRadius(29)
+              .backgroundColor(Theme.accent())
+              .shadow({ radius: 24, color: 'rgba(47,125,255,0.35)', offsetX: 0, offsetY: 12 })
+              .onClick(() => { this.supportNow(); })
+
+            Row() {
+              Row() {
+                Toggle({ type: ToggleType.Checkbox, isOn: this.skipSupportSevenDays })
+                  .width(20)
+                  .height(20)
+                  .selectedColor(Theme.accent())
+                  .onChange((checked: boolean) => { this.skipSupportSevenDays = checked; })
+                Text('七天内不再提醒')
+                  .fontSize(14)
+                  .fontColor(Theme.textSecondary(this.colorMode === 0))
+                  .margin({ left: 8 })
+              }
+              .onClick(() => { this.skipSupportSevenDays = !this.skipSupportSevenDays; })
+              
+              Blank()
+              
+              Text('稍后再说')
+                .fontSize(14)
+                .fontWeight(600)
+                .fontColor(Theme.textSecondary(this.colorMode === 0))
+                .padding(12)
+                .onClick(() => { this.closeSupportDialog(); })
+            }
+            .width('100%')
+            .margin({ top: 20 })
+          }
+          .width('calc(100% - 48px)')
+          .padding({ left: 32, right: 32, top: 40, bottom: 28 })
+          .borderRadius(36)
+          .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+          .shadow({ radius: 50, color: 'rgba(0,0,0,0.3)', offsetX: 0, offsetY: 25 })
+          .alignItems(HorizontalAlign.Center)
+          .transition(TransitionEffect.scale({ x: 0.9, y: 0.9 }).combine(TransitionEffect.OPACITY).animation({ duration: 400, curve: Curve.Friction }))
+        }
       }
+      .width('100%')
+      .height('100%')
     }
-    .width('100%')
-    .height('100%')
+    .hideTitleBar(true)
+    .mode(NavigationMode.Stack)
     .backgroundColor(Theme.pageBg(this.colorMode === 0))
   }
 }

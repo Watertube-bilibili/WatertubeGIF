@@ -3,8 +3,10 @@ import { media } from '@kit.MediaKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { taskpool } from '@kit.ArkTS';
+import { common } from '@kit.AbilityKit';
 import { AppConstants } from '../common/Constants';
 import { GifBinaryEncoder, readPixelMapRgba } from './GifBinaryEncoder';
+import { LongTaskService } from './LongTaskService';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'GifPipeline';
@@ -99,7 +101,7 @@ export class GifEncoder {
 
   async convertVideo(
     sourceUri: string,
-    filesDir: string,
+    context: common.UIAbilityContext,
     settings: GifSettings,
     onProgress: (value: number, label: string) => void
   ): Promise<GifResult> {
@@ -110,8 +112,11 @@ export class GifEncoder {
     let frames: Uint8Array[] = [];
     let outW: number = settings.width;
     let outH: number = settings.width;
+    let longTaskService = LongTaskService.getInstance();
 
     try {
+      await longTaskService.startContinuousTask(context, 'GIF 转换中', '准备视频资源...');
+      
       file = fileIo.openSync(sourceUri, fileIo.OpenMode.READ_ONLY);
       let stat: fileIo.Stat = fileIo.statSync(file.fd);
       generator = await media.createAVImageGenerator();
@@ -174,7 +179,10 @@ export class GifEncoder {
         } else if (frames.length < wantedFrames) {
           frames.push(pixels);
         }
-        onProgress(Math.floor((i + 1) * 55 / wantedFrames), '正在抽取画面');
+        
+        let currentProgress = Math.floor((i + 1) * 55 / wantedFrames);
+        onProgress(currentProgress, '正在抽取画面');
+        await longTaskService.updateLiveViewProgress(currentProgress, `正在抽取画面 ${Math.round((i + 1) / wantedFrames * 100)}%`);
         await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
       }
 
@@ -186,11 +194,13 @@ export class GifEncoder {
       }
 
       onProgress(62, '正在编码 GIF');
+      await longTaskService.updateLiveViewProgress(62, '正在编码 GIF, 请稍候...');
+      
       frameDelayCs = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / frames.length)));
       let task: taskpool.Task = new taskpool.Task(encodeTask, frames, outW, outH, frameDelayCs, settings.loop);
       let data: ArrayBuffer = await taskpool.execute(task) as ArrayBuffer;
 
-      let outPath: string = filesDir + '/watertube_' + Date.now().toString() + '.gif';
+      let outPath: string = context.filesDir + '/watertube_' + Date.now().toString() + '.gif';
       let outFile: fileIo.File = fileIo.openSync(outPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
       fileIo.writeSync(outFile.fd, data);
       fileIo.closeSync(outFile);
@@ -200,12 +210,15 @@ export class GifEncoder {
       result.height = outH;
       result.frames = frames.length;
       result.size = data.byteLength;
+      
       onProgress(100, '转换完成');
+      await longTaskService.updateLiveViewProgress(100, '转换完成');
       return result;
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'convertVideo failed');
       return new GifResult();
     } finally {
+      await longTaskService.stopContinuousTask(context);
       try {
         if (generator !== undefined) {
           await generator.release();
@@ -221,3 +234,4 @@ export class GifEncoder {
     }
   }
 }
+

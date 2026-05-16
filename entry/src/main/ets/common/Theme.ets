@@ -4,11 +4,11 @@ export class Theme {
   }
 
   static panelBg(dark: boolean): string {
-    return dark ? 'rgba(18,25,42,0.78)' : 'rgba(255,255,255,0.76)';
+    return dark ? 'rgba(18,25,42,0.68)' : 'rgba(255,255,255,0.65)';
   }
 
   static panelStrong(dark: boolean): string {
-    return dark ? 'rgba(24,34,56,0.94)' : 'rgba(255,255,255,0.94)';
+    return dark ? 'rgba(24,34,56,0.85)' : 'rgba(255,255,255,0.88)';
   }
 
   static textPrimary(dark: boolean): string {
@@ -20,7 +20,7 @@ export class Theme {
   }
 
   static border(dark: boolean): string {
-    return dark ? 'rgba(255,255,255,0.14)' : 'rgba(18,36,69,0.10)';
+    return dark ? 'rgba(255,255,255,0.12)' : 'rgba(18,36,69,0.08)';
   }
 
   static accent(): string {
@@ -41,5 +41,9 @@ export class Theme {
 
   static warning(): string {
     return '#D97706';
+  }
+
+  static blurStyle(dark: boolean): BlurStyle {
+    return dark ? BlurStyle.COMPONENT_THICK : BlurStyle.COMPONENT_ULTRA_THIN;
   }
 }
