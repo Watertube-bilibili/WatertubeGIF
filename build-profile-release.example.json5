@@ -5,13 +5,13 @@
         "name": "release",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "D:\\WaterTubeGIF2\\release.cer",
-          "storeFile": "D:\\WaterTubeGIF2\\release.p12",
-          "keyAlias": "release",
-          "cmdLine": "D:\\WaterTubeGIF2\\release.cer",
+          "certpath": "${CERT_PATH}",
+          "storeFile": "${STORE_FILE}",
+          "keyAlias": "${KEY_ALIAS}",
+          "cmdLine": "${CERT_PATH}",
           "signAlg": "SHA256withECDSA",
-          "storePass": "填写你的密码",
-          "keyPass": "填写你的密码"
+          "storePass": "${STORE_PASS}",
+          "keyPass": "${KEY_PASS}"
         }
       }
     ],

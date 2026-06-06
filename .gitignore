@@ -10,3 +10,23 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+
+# Signing materials and local release signing config
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.cer
+*.csr
+*.pem
+*.key
+*.der
+*.mobileprovision
+signing/
+cert/
+certs/
+release/
+build-profile-release.json5
+build-profile.local.json5
+**/build-profile-release.json5
+**/build-profile.local.json5
