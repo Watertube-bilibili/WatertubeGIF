@@ -48,18 +48,6 @@ function fitWidth(targetWidth: number, srcW: number, srcH: number): number[] {
   return [width, height];
 }
 
-function frameDelta(a: Uint8Array, b: Uint8Array): number {
-  let total: number = Math.min(a.length, b.length);
-  let step: number = Math.max(4, Math.floor(total / 6000));
-  let delta: number = 0;
-  let samples: number = 0;
-  for (let i: number = 0; i < total; i += step) {
-    delta += Math.abs(a[i] - b[i]);
-    samples++;
-  }
-  return samples === 0 ? 0 : delta / samples;
-}
-
 async function readDurationSeconds(sourceUri: string): Promise<number> {
   let file: fileIo.File | undefined = undefined;
   let extractor: media.AVMetadataExtractor | undefined = undefined;
@@ -155,7 +143,8 @@ export class GifEncoder {
       let intervalUs: number = wantedFrames <= 1 ? 1000000 : Math.floor((clipSeconds * 1000000) / wantedFrames);
       let frameDelayCs: number = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / wantedFrames)));
       let pixelParam: media.PixelMapParams = { width: outW, height: outH };
-      let last: Uint8Array | undefined = undefined;
+      let lastUiProgress: number = -1;
+      let lastLiveProgress: number = -1;
 
       for (let i: number = 0; i < wantedFrames; i++) {
         if (this.cancelled) {
@@ -173,17 +162,20 @@ export class GifEncoder {
         } catch (e) {
         }
 
-        if (last === undefined || frameDelta(last, pixels) > 1.2 || frames.length < 2) {
-          frames.push(pixels);
-          last = pixels;
-        } else if (frames.length < wantedFrames) {
-          frames.push(pixels);
-        }
+        frames.push(pixels);
         
         let currentProgress = Math.floor((i + 1) * 55 / wantedFrames);
-        onProgress(currentProgress, '正在抽取画面');
-        await longTaskService.updateLiveViewProgress(currentProgress, `正在抽取画面 ${Math.round((i + 1) / wantedFrames * 100)}%`);
-        await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+        if (currentProgress !== lastUiProgress) {
+          lastUiProgress = currentProgress;
+          onProgress(currentProgress, '正在抽取画面');
+        }
+        if (currentProgress >= lastLiveProgress + 5 || i === wantedFrames - 1) {
+          lastLiveProgress = currentProgress;
+          await longTaskService.updateLiveViewProgress(currentProgress, `正在抽取画面 ${Math.round((i + 1) / wantedFrames * 100)}%`);
+        }
+        if ((i & 3) === 0) {
+          await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+        }
       }
 
       if (settings.reverse) {
@@ -234,4 +226,3 @@ export class GifEncoder {
     }
   }
 }
-

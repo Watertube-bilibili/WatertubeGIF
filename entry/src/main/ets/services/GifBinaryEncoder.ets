@@ -33,38 +33,40 @@ function buildPalette(frames: Uint8Array[], width: number, height: number): Uint
   return palette;
 }
 
-function buildLookup(palette: Uint8Array): Uint8Array {
-  let lut: Uint8Array = new Uint8Array(32768);
-  for (let key: number = 0; key < lut.length; key++) {
-    let r: number = ((key >> 10) & 0x1F) * 8 + 4;
-    let g: number = ((key >> 5) & 0x1F) * 8 + 4;
-    let b: number = (key & 0x1F) * 8 + 4;
-    let best: number = 0;
-    let bestDist: number = 2147483647;
-    for (let i: number = 0; i < 256; i++) {
-      let dr: number = r - palette[i * 3];
-      let dg: number = g - palette[i * 3 + 1];
-      let db: number = b - palette[i * 3 + 2];
-      let dist: number = dr * dr + dg * dg + db * db;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = i;
-        if (dist === 0) {
-          break;
-        }
+function nearestPaletteIndex(key: number, palette: Uint8Array, cache: Int16Array): number {
+  let cached: number = cache[key];
+  if (cached >= 0) {
+    return cached;
+  }
+
+  let r: number = ((key >> 10) & 0x1F) * 8 + 4;
+  let g: number = ((key >> 5) & 0x1F) * 8 + 4;
+  let b: number = (key & 0x1F) * 8 + 4;
+  let best: number = 0;
+  let bestDist: number = 2147483647;
+  for (let i: number = 0; i < 256; i++) {
+    let dr: number = r - palette[i * 3];
+    let dg: number = g - palette[i * 3 + 1];
+    let db: number = b - palette[i * 3 + 2];
+    let dist: number = dr * dr + dg * dg + db * db;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+      if (dist === 0) {
+        break;
       }
     }
-    lut[key] = best;
   }
-  return lut;
+  cache[key] = best;
+  return best;
 }
 
-function mapPixels(frame: Uint8Array, lut: Uint8Array, pixelCount: number): Uint8Array {
+function mapPixels(frame: Uint8Array, palette: Uint8Array, cache: Int16Array, pixelCount: number): Uint8Array {
   let indices: Uint8Array = new Uint8Array(pixelCount);
   for (let p: number = 0; p < pixelCount; p++) {
     let off: number = p * 4;
     let key: number = ((frame[off] >> 3) << 10) | ((frame[off + 1] >> 3) << 5) | (frame[off + 2] >> 3);
-    indices[p] = lut[key];
+    indices[p] = nearestPaletteIndex(key, palette, cache);
   }
   return indices;
 }
@@ -175,7 +177,10 @@ export class GifBinaryEncoder {
     let delay: number = Math.max(2, Math.min(65535, Math.round(frameDelayCs)));
     let pixelCount: number = width * height;
     let palette: Uint8Array = buildPalette(frames, width, height);
-    let lut: Uint8Array = buildLookup(palette);
+    let cache: Int16Array = new Int16Array(32768);
+    for (let i: number = 0; i < cache.length; i++) {
+      cache[i] = -1;
+    }
 
     out.push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61);
     pushShort(out, width);
@@ -205,7 +210,7 @@ export class GifBinaryEncoder {
       out.push(0x00);
       out.push(0x08);
 
-      let encoded: Uint8Array = lzwEncode(mapPixels(frame, lut, pixelCount));
+      let encoded: Uint8Array = lzwEncode(mapPixels(frame, palette, cache, pixelCount));
       let blocks: Uint8Array = subBlocks(encoded);
       for (let b of blocks) {
         out.push(b);

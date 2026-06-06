@@ -147,13 +147,19 @@ struct Index {
               .alignItems(HorizontalAlign.Start)
               Blank()
               
-              SymbolBySymbolName({ 
-                name: 'video.fill.badge.plus', 
-                fontSize: 42, 
-                fontColor: Theme.accent() 
-              })
-                .opacity(0.12)
-                .rotate({ angle: -15 })
+              Column() {
+                Text('GIF')
+                  .fontSize(18)
+                  .fontWeight(900)
+                  .fontColor(Color.White)
+              }
+              .width(64)
+              .height(64)
+              .borderRadius(20)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              .backgroundColor(Theme.accent())
+              .shadow({ radius: 18, color: 'rgba(47,125,255,0.28)', offsetX: 0, offsetY: 8 })
             }
             .width('100%')
             .padding({ left: 24, right: 24, top: 40, bottom: 24 })
@@ -234,7 +240,7 @@ struct Index {
                             .fontColor(Theme.textPrimary(this.colorMode === 0))
                             .maxLines(1)
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
-                          Text(item.width + '脳' + item.height + ' 路 ' + MediaService.formatBytes(item.size))
+                          Text(item.width + '×' + item.height + ' · ' + MediaService.formatBytes(item.size))
                             .fontSize(12)
                             .fontColor(Theme.textSecondary(this.colorMode === 0))
                             .margin({ top: 4 })
