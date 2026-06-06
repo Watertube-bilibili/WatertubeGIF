@@ -194,12 +194,19 @@ struct Index {
 
               if (this.history.length === 0) {
                 Column() {
-                  SymbolBySymbolName({ 
-                    name: 'photo.on.rectangle.angled', 
-                    fontSize: 64, 
-                    fontColor: Theme.textPrimary(this.colorMode === 0) 
-                  })
-                    .opacity(0.15)
+                  Column() {
+                    Text('GIF')
+                      .fontSize(22)
+                      .fontWeight(900)
+                      .fontColor(Color.White)
+                  }
+                    .width(76)
+                    .height(76)
+                    .borderRadius(24)
+                    .justifyContent(FlexAlign.Center)
+                    .alignItems(HorizontalAlign.Center)
+                    .backgroundColor(Theme.accent())
+                    .shadow({ radius: 18, color: 'rgba(47,125,255,0.28)', offsetX: 0, offsetY: 8 })
                     .margin({ bottom: 20 })
                   Text('暂无转换历史')
                     .fontSize(18)

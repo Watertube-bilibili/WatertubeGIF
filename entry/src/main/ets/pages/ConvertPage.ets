@@ -429,11 +429,21 @@ struct ConvertPage {
       if (this.isConverting) {
         this.progressView()
       } else {
-        this.settingsView()
+        Scroll() {
+          Column() {
+            this.settingsView()
+          }
+          .width('100%')
+          .padding({ top: 24, bottom: 24 })
+          .alignItems(HorizontalAlign.Center)
+        }
+        .width('100%')
+        .height('100%')
+        .scrollBar(BarState.Auto)
       }
     }
     .width('100%')
     .height('100%')
-    .alignContent(Alignment.Center)
+    .alignContent(this.isConverting ? Alignment.Center : Alignment.Top)
   }
 }
