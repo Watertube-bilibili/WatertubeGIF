@@ -1,9 +1,37 @@
 import { image } from '@kit.ImageKit';
+import { AppConstants } from '../common/Constants';
 
-function buildPalette(frames: Uint8Array[], width: number, height: number): Uint8Array {
+const BAYER_4X4: number[] = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5
+];
+
+function paletteSampleBudget(pixelCount: number, frameCount: number, quality: number): number {
+  if (quality === AppConstants.QUALITY_ULTRA) {
+    return pixelCount;
+  }
+  if (quality === AppConstants.QUALITY_WECHAT) {
+    return Math.max(1, Math.floor(26000 / Math.max(frameCount, 1)));
+  }
+  return Math.max(1, Math.floor(70000 / Math.max(frameCount, 1)));
+}
+
+function clampColor(value: number): number {
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 255) {
+    return 255;
+  }
+  return value;
+}
+
+function buildPalette(frames: Uint8Array[], width: number, height: number, quality: number): Uint8Array {
   let hist: Uint32Array = new Uint32Array(32768);
   let pixelsPerFrame: number = width * height;
-  let sampleBudget: number = Math.max(1, Math.floor(70000 / Math.max(frames.length, 1)));
+  let sampleBudget: number = paletteSampleBudget(pixelsPerFrame, frames.length, quality);
 
   for (let frame of frames) {
     let step: number = Math.max(1, Math.floor(pixelsPerFrame / sampleBudget));
@@ -61,11 +89,23 @@ function nearestPaletteIndex(key: number, palette: Uint8Array, cache: Int16Array
   return best;
 }
 
-function mapPixels(frame: Uint8Array, palette: Uint8Array, cache: Int16Array, pixelCount: number): Uint8Array {
+function mapPixels(frame: Uint8Array, palette: Uint8Array, cache: Int16Array, pixelCount: number, width: number,
+  quality: number): Uint8Array {
   let indices: Uint8Array = new Uint8Array(pixelCount);
   for (let p: number = 0; p < pixelCount; p++) {
     let off: number = p * 4;
-    let key: number = ((frame[off] >> 3) << 10) | ((frame[off + 1] >> 3) << 5) | (frame[off + 2] >> 3);
+    let r: number = frame[off];
+    let g: number = frame[off + 1];
+    let b: number = frame[off + 2];
+    if (quality === AppConstants.QUALITY_ULTRA) {
+      let x: number = p % width;
+      let y: number = Math.floor(p / width);
+      let delta: number = (BAYER_4X4[(y & 3) * 4 + (x & 3)] - 8) * 2;
+      r = clampColor(r + delta);
+      g = clampColor(g + delta);
+      b = clampColor(b + delta);
+    }
+    let key: number = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
     indices[p] = nearestPaletteIndex(key, palette, cache);
   }
   return indices;
@@ -172,11 +212,12 @@ function pushShort(out: number[], value: number): void {
 }
 
 export class GifBinaryEncoder {
-  static encode(frames: Uint8Array[], width: number, height: number, frameDelayCs: number, loop: boolean): ArrayBuffer {
+  static encode(frames: Uint8Array[], width: number, height: number, frameDelayCs: number, loop: boolean,
+    quality: number): ArrayBuffer {
     let out: number[] = [];
     let delay: number = Math.max(2, Math.min(65535, Math.round(frameDelayCs)));
     let pixelCount: number = width * height;
-    let palette: Uint8Array = buildPalette(frames, width, height);
+    let palette: Uint8Array = buildPalette(frames, width, height, quality);
     let cache: Int16Array = new Int16Array(32768);
     for (let i: number = 0; i < cache.length; i++) {
       cache[i] = -1;
@@ -210,7 +251,7 @@ export class GifBinaryEncoder {
       out.push(0x00);
       out.push(0x08);
 
-      let encoded: Uint8Array = lzwEncode(mapPixels(frame, palette, cache, pixelCount));
+      let encoded: Uint8Array = lzwEncode(mapPixels(frame, palette, cache, pixelCount, width, quality));
       let blocks: Uint8Array = subBlocks(encoded);
       for (let b of blocks) {
         out.push(b);

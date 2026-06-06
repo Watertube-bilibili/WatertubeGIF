@@ -14,6 +14,7 @@ class ConvertParams {
   seconds: number = AppConstants.DEFAULT_DURATION_SECONDS;
   loop: boolean = true;
   reverse: boolean = false;
+  quality: number = AppConstants.DEFAULT_QUALITY;
 }
 
 @Entry
@@ -63,6 +64,7 @@ struct Index {
       params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
       params.loop = true;
       params.reverse = false;
+      params.quality = AppConstants.DEFAULT_QUALITY;
       this.isPicking = false;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {

@@ -17,6 +17,7 @@ export class GifSettings {
   seconds: number = AppConstants.DEFAULT_DURATION_SECONDS;
   loop: boolean = true;
   reverse: boolean = false;
+  quality: number = AppConstants.DEFAULT_QUALITY;
 }
 
 export class GifResult {
@@ -28,8 +29,9 @@ export class GifResult {
 }
 
 @Concurrent
-function encodeTask(frames: Uint8Array[], width: number, height: number, frameDelayCs: number, loop: boolean): ArrayBuffer {
-  return GifBinaryEncoder.encode(frames, width, height, frameDelayCs, loop);
+function encodeTask(frames: Uint8Array[], width: number, height: number, frameDelayCs: number, loop: boolean,
+  quality: number): ArrayBuffer {
+  return GifBinaryEncoder.encode(frames, width, height, frameDelayCs, loop, quality);
 }
 
 function fitWidth(targetWidth: number, srcW: number, srcH: number): number[] {
@@ -46,6 +48,40 @@ function fitWidth(targetWidth: number, srcW: number, srcH: number): number[] {
   }
   height = Math.max(120, Math.min(960, height));
   return [width, height];
+}
+
+function effectiveWidth(settings: GifSettings): number {
+  if (settings.quality === AppConstants.QUALITY_WECHAT) {
+    return Math.min(settings.width, 360);
+  }
+  return settings.width;
+}
+
+function effectiveFps(settings: GifSettings): number {
+  if (settings.quality === AppConstants.QUALITY_WECHAT) {
+    return Math.min(settings.fps, 10);
+  }
+  return settings.fps;
+}
+
+function qualityMaxFrames(quality: number): number {
+  if (quality === AppConstants.QUALITY_ULTRA) {
+    return AppConstants.MAX_FRAMES_ULTRA;
+  }
+  if (quality === AppConstants.QUALITY_WECHAT) {
+    return AppConstants.MAX_FRAMES_WECHAT;
+  }
+  return AppConstants.MAX_FRAMES;
+}
+
+function qualityMemoryBudget(quality: number): number {
+  if (quality === AppConstants.QUALITY_ULTRA) {
+    return AppConstants.MAX_PIXELS_IN_MEMORY_ULTRA;
+  }
+  if (quality === AppConstants.QUALITY_WECHAT) {
+    return AppConstants.MAX_PIXELS_IN_MEMORY_WECHAT;
+  }
+  return AppConstants.MAX_PIXELS_IN_MEMORY;
 }
 
 async function readDurationSeconds(sourceUri: string): Promise<number> {
@@ -116,7 +152,7 @@ export class GifEncoder {
         { width: 1920, height: 1080 }
       );
       let info: image.ImageInfo = await probe.getImageInfo();
-      let fitted: number[] = fitWidth(settings.width, info.size.width, info.size.height);
+      let fitted: number[] = fitWidth(effectiveWidth(settings), info.size.width, info.size.height);
       outW = fitted[0];
       outH = fitted[1];
       try {
@@ -134,12 +170,13 @@ export class GifEncoder {
       }
       clipSeconds = Math.min(AppConstants.MAX_DURATION_SECONDS, Math.max(1, clipSeconds));
 
-      let wantedFrames: number = Math.max(2, Math.floor(clipSeconds * settings.fps));
-      wantedFrames = Math.min(AppConstants.MAX_FRAMES, wantedFrames);
-      let maxByMemory: number = Math.max(2, Math.floor(AppConstants.MAX_PIXELS_IN_MEMORY / (outW * outH * 4)));
+      let maxFrames: number = qualityMaxFrames(settings.quality);
+      let wantedFrames: number = Math.max(2, Math.floor(clipSeconds * effectiveFps(settings)));
+      wantedFrames = Math.min(maxFrames, wantedFrames);
+      let maxByMemory: number = Math.max(2, Math.floor(qualityMemoryBudget(settings.quality) / (outW * outH * 4)));
       wantedFrames = Math.min(wantedFrames, maxByMemory);
       let minFramesForGifDelay: number = Math.ceil((clipSeconds * 100) / 65535) + 1;
-      wantedFrames = Math.max(wantedFrames, Math.min(AppConstants.MAX_FRAMES, minFramesForGifDelay));
+      wantedFrames = Math.max(wantedFrames, Math.min(maxFrames, minFramesForGifDelay));
       let intervalUs: number = wantedFrames <= 1 ? 1000000 : Math.floor((clipSeconds * 1000000) / wantedFrames);
       let frameDelayCs: number = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / wantedFrames)));
       let pixelParam: media.PixelMapParams = { width: outW, height: outH };
@@ -189,7 +226,8 @@ export class GifEncoder {
       await longTaskService.updateLiveViewProgress(62, '正在编码 GIF, 请稍候...');
       
       frameDelayCs = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / frames.length)));
-      let task: taskpool.Task = new taskpool.Task(encodeTask, frames, outW, outH, frameDelayCs, settings.loop);
+      let task: taskpool.Task = new taskpool.Task(encodeTask, frames, outW, outH, frameDelayCs, settings.loop,
+        settings.quality);
       let data: ArrayBuffer = await taskpool.execute(task) as ArrayBuffer;
 
       let outPath: string = context.filesDir + '/watertube_' + Date.now().toString() + '.gif';

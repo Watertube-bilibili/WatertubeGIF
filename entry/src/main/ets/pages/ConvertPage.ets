@@ -28,6 +28,7 @@ struct ConvertPage {
   @State seconds: number = AppConstants.DEFAULT_DURATION_SECONDS;
   @State loop: boolean = true;
   @State reverse: boolean = false;
+  @State quality: number = AppConstants.DEFAULT_QUALITY;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private encoder: GifEncoder = new GifEncoder();
@@ -42,6 +43,7 @@ struct ConvertPage {
       this.seconds = (params['seconds'] as number) ?? AppConstants.DEFAULT_DURATION_SECONDS;
       this.loop = (params['loop'] as boolean) ?? true;
       this.reverse = (params['reverse'] as boolean) ?? false;
+      this.quality = (params['quality'] as number) ?? AppConstants.DEFAULT_QUALITY;
     }
   }
 
@@ -68,6 +70,32 @@ struct ConvertPage {
     return minuteRest === 0 ? hours + ' 小时' : hours + ' 小时 ' + minuteRest + ' 分钟';
   }
 
+  private qualityLabel(): string {
+    if (this.quality === AppConstants.QUALITY_ULTRA) {
+      return '超高质量';
+    }
+    if (this.quality === AppConstants.QUALITY_WECHAT) {
+      return '微信质量';
+    }
+    return '中等质量';
+  }
+
+  private applyQualityPreset(quality: number): void {
+    this.quality = quality;
+    if (quality === AppConstants.QUALITY_ULTRA) {
+      this.outputWidth = 720;
+      this.fps = 20;
+      return;
+    }
+    if (quality === AppConstants.QUALITY_WECHAT) {
+      this.outputWidth = 320;
+      this.fps = 8;
+      return;
+    }
+    this.outputWidth = AppConstants.DEFAULT_WIDTH;
+    this.fps = AppConstants.DEFAULT_FPS;
+  }
+
   private async run(): Promise<void> {
     if (this.sourceUri.length === 0) {
       promptAction.showToast({ message: '没有可转换的视频', duration: 1800 });
@@ -91,6 +119,7 @@ struct ConvertPage {
     settings.seconds = this.seconds;
     settings.loop = this.loop;
     settings.reverse = this.reverse;
+    settings.quality = this.quality;
 
     let result: GifResult = await this.encoder.convertVideo(
       this.sourceUri,
@@ -118,6 +147,62 @@ struct ConvertPage {
     params.frames = result.frames;
     params.size = result.size;
     router.replaceUrl({ url: 'pages/PreviewPage', params: params });
+  }
+
+  @Builder
+  private qualityOption(label: string, desc: string, quality: number) {
+    Column() {
+      Text(label)
+        .fontSize(13)
+        .fontWeight(850)
+        .fontColor(this.quality === quality ? Color.White : Theme.textPrimary(this.colorMode === 0))
+      Text(desc)
+        .fontSize(10)
+        .fontColor(this.quality === quality ? 'rgba(255,255,255,0.78)' : Theme.textSecondary(this.colorMode === 0))
+        .textAlign(TextAlign.Center)
+        .margin({ top: 4 })
+    }
+    .layoutWeight(1)
+    .height(74)
+    .padding({ left: 6, right: 6 })
+    .borderRadius(18)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.quality === quality ? Theme.accent() : Theme.panelBg(this.colorMode === 0))
+    .border({ width: 1, color: this.quality === quality ? 'rgba(255,255,255,0.26)' : Theme.border(this.colorMode === 0) })
+    .onClick(() => {
+      this.applyQualityPreset(quality);
+    })
+  }
+
+  @Builder
+  private qualityBlock() {
+    Column() {
+      Row() {
+        Text('输出质量')
+          .fontSize(15)
+          .fontWeight(800)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+        Blank()
+        Text(this.qualityLabel())
+          .fontSize(13)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        this.qualityOption('超高', '低色差', AppConstants.QUALITY_ULTRA)
+        this.qualityOption('中等', '均衡', AppConstants.QUALITY_MEDIUM)
+        this.qualityOption('微信', '小体积', AppConstants.QUALITY_WECHAT)
+      }
+      .width('100%')
+      .margin({ top: 12 })
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(20)
+    .backgroundColor(Theme.panelBg(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
   }
 
   @Builder
@@ -209,6 +294,7 @@ struct ConvertPage {
         .margin({ top: 8, bottom: 24 })
 
       Column({ space: 12 }) {
+        this.qualityBlock()
         this.sliderBlock('画面宽度', this.outputWidth + ' px', 160, 960, 20, this.outputWidth, (value: number) => {
           this.outputWidth = value;
         })
@@ -293,7 +379,7 @@ struct ConvertPage {
         .fontColor(Theme.textPrimary(this.colorMode === 0))
         .margin({ top: 32 })
 
-      Text(this.outputWidth + 'px · ' + this.fps + 'fps · ' + this.durationLabel())
+      Text(this.qualityLabel() + ' · ' + this.outputWidth + 'px · ' + this.fps + 'fps · ' + this.durationLabel())
         .fontSize(14)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .margin({ top: 10 })
