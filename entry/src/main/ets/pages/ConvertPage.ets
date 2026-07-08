@@ -168,8 +168,16 @@ struct ConvertPage {
     .borderRadius(18)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
-    .backgroundColor(this.quality === quality ? Theme.accent() : Theme.panelBg(this.colorMode === 0))
+    .linearGradient(this.quality === quality ? {
+      angle: 135,
+      colors: [
+        ['#2F7DFF', 0],
+        ['#21C7D9', 1]
+      ]
+    } : undefined)
+    .backgroundColor(this.quality === quality ? Color.Transparent : Theme.panelBg(this.colorMode === 0))
     .border({ width: 1, color: this.quality === quality ? 'rgba(255,255,255,0.26)' : Theme.border(this.colorMode === 0) })
+    .shadow(this.quality === quality ? { radius: 18, color: 'rgba(33,199,217,0.3)', offsetX: 0, offsetY: 8 } : { radius: 0, color: Color.Transparent })
     .onClick(() => {
       this.applyQualityPreset(quality);
     })
@@ -322,8 +330,14 @@ struct ConvertPage {
         .fontWeight(850)
         .fontColor(Color.White)
         .borderRadius(29)
-        .backgroundColor(Theme.accent())
-        .shadow({ radius: 24, color: 'rgba(47,125,255,0.3)', offsetX: 0, offsetY: 12 })
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#2F7DFF', 0],
+            ['#21C7D9', 1]
+          ]
+        })
+        .shadow({ radius: 24, color: 'rgba(33,199,217,0.35)', offsetX: 0, offsetY: 12 })
         .margin({ top: 24 })
         .onClick(() => { this.run(); })
     }
@@ -356,22 +370,32 @@ struct ConvertPage {
         .margin({ top: 10, bottom: 40 })
 
       Stack() {
+        // Glowing base
+        Column()
+          .width(160)
+          .height(160)
+          .borderRadius(80)
+          .backgroundColor(Theme.accent())
+          .opacity(0.12)
+          .blur(30)
+
         Progress({ value: this.progress, total: 100, type: ProgressType.Ring })
           .width(180)
           .height(180)
           .color(Theme.accent())
-          .backgroundColor('rgba(120,140,170,0.2)')
-          .style({ strokeWidth: 12 })
+          .backgroundColor(this.colorMode === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)')
+          .style({ strokeWidth: 10, enableScanEffect: true })
         
         Column() {
           Text(this.progress + '%')
-            .fontSize(36)
-            .fontWeight(900)
+            .fontSize(38)
+            .fontWeight(950)
             .fontColor(Theme.textPrimary(this.colorMode === 0))
         }
       }
       .width(200)
       .height(200)
+      .alignContent(Alignment.Center)
 
       Text(this.status)
         .fontSize(18)

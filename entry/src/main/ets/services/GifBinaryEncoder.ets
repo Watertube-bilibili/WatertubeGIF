@@ -58,6 +58,17 @@ function buildPalette(frames: Uint8Array[], width: number, height: number, quali
     palette[i * 3 + 1] = ((key >> 5) & 0x1F) * 8 + 4;
     palette[i * 3 + 2] = (key & 0x1F) * 8 + 4;
   }
+  // Fill remaining slots to avoid nearest color mapping to black (0,0,0)
+  if (count > 0 && count < 256) {
+    let lastR = palette[(count - 1) * 3];
+    let lastG = palette[(count - 1) * 3 + 1];
+    let lastB = palette[(count - 1) * 3 + 2];
+    for (let i = count; i < 256; i++) {
+      palette[i * 3] = lastR;
+      palette[i * 3 + 1] = lastG;
+      palette[i * 3 + 2] = lastB;
+    }
+  }
   return palette;
 }
 
@@ -111,85 +122,139 @@ function mapPixels(frame: Uint8Array, palette: Uint8Array, cache: Int16Array, pi
   return indices;
 }
 
-class BitWriter {
-  bytes: number[] = [];
-  bits: number = 0;
-  bitCount: number = 0;
-  codeSize: number;
-  minCodeSize: number;
-  clearCode: number;
-  endCode: number;
-  nextCode: number;
-  limit: number;
-
-  constructor(minCodeSize: number) {
-    this.minCodeSize = minCodeSize;
-    this.clearCode = 1 << minCodeSize;
-    this.endCode = this.clearCode + 1;
-    this.nextCode = this.endCode + 1;
-    this.codeSize = minCodeSize + 1;
-    this.limit = 1 << this.codeSize;
-  }
-
-  write(code: number): void {
-    this.bits |= code << this.bitCount;
-    this.bitCount += this.codeSize;
-    while (this.bitCount >= 8) {
-      this.bytes.push(this.bits & 0xFF);
-      this.bits >>= 8;
-      this.bitCount -= 8;
-    }
-  }
-
-  reset(): void {
-    this.nextCode = this.endCode + 1;
-    this.codeSize = this.minCodeSize + 1;
-    this.limit = 1 << this.codeSize;
-  }
-
-  growIfNeeded(): void {
-    if (this.nextCode >= this.limit && this.codeSize < 12) {
-      this.codeSize++;
-      this.limit = 1 << this.codeSize;
-    }
-  }
-
-  finish(): Uint8Array {
-    if (this.bitCount > 0) {
-      this.bytes.push(this.bits & 0xFF);
-    }
-    return new Uint8Array(this.bytes);
-  }
-}
-
 function lzwEncode(indices: Uint8Array): Uint8Array {
-  let writer: BitWriter = new BitWriter(8);
-  writer.write(writer.clearCode);
+  const initCodeSize = 8;
+  const hsize = 5003;
+  const htab = new Int32Array(hsize);
+  const codetab = new Int32Array(hsize);
+
+  const bytes: number[] = [];
+  let cur_accum = 0;
+  let cur_bits = 0;
+
+  const init_bits = initCodeSize + 1;
+  const g_init_bits = init_bits;
+
+  let clear_flg = false;
+  let n_bits = g_init_bits;
+  let maxcode = (1 << n_bits) - 1;
+
+  const ClearCode = 1 << (init_bits - 1);
+  const EOFCode = ClearCode + 1;
+  let free_ent = ClearCode + 2;
+
+  codetab.fill(0);
+  htab.fill(-1);
+
+  const MASKS = [
+    0x0000, 0x0001, 0x0003, 0x0007,
+    0x000f, 0x001f, 0x003f, 0x007f,
+    0x00ff, 0x01ff, 0x03ff, 0x07ff,
+    0x0fff, 0x1fff, 0x3fff, 0x7fff,
+    0xffff
+  ];
+
+  const output = (code: number): void => {
+    cur_accum &= MASKS[cur_bits];
+    if (cur_bits > 0) {
+      cur_accum |= code << cur_bits;
+    } else {
+      cur_accum = code;
+    }
+    cur_bits += n_bits;
+
+    while (cur_bits >= 8) {
+      bytes.push(cur_accum & 0xff);
+      cur_accum >>= 8;
+      cur_bits -= 8;
+    }
+
+    if (free_ent > maxcode || clear_flg) {
+      if (clear_flg) {
+        n_bits = g_init_bits;
+        maxcode = (1 << n_bits) - 1;
+        clear_flg = false;
+      } else {
+        ++n_bits;
+        if (n_bits === 12) {
+          maxcode = 1 << 12;
+        } else {
+          maxcode = (1 << n_bits) - 1;
+        }
+      }
+    }
+
+    if (code === EOFCode) {
+      while (cur_bits > 0) {
+        bytes.push(cur_accum & 0xff);
+        cur_accum >>= 8;
+        cur_bits -= 8;
+      }
+    }
+  };
+
+  output(ClearCode);
 
   if (indices.length === 0) {
-    writer.write(writer.endCode);
-    return writer.finish();
+    output(EOFCode);
+    return new Uint8Array(bytes);
   }
 
-  // Emit literal color-index codes and reset often. This is larger than a full
-  // dictionary encoder, but it keeps GIF code-size state simple and reliable.
-  let codesAfterClear: number = 0;
-  for (let i: number = 0; i < indices.length; i++) {
-    writer.write(indices[i]);
-    if (codesAfterClear > 0) {
-      writer.nextCode++;
-      writer.growIfNeeded();
+  let ent = indices[0];
+
+  let hshift = 0;
+  for (let fcode = hsize; fcode < 65536; fcode *= 2) {
+    ++hshift;
+  }
+  hshift = 8 - hshift;
+
+  const length = indices.length;
+  for (let idx = 1; idx < length; idx++) {
+    const c = indices[idx];
+    const fcode = (c << 12) + ent;
+    let i = (c << hshift) ^ ent;
+
+    if (htab[i] === fcode) {
+      ent = codetab[i];
+      continue;
     }
-    codesAfterClear++;
-    if (codesAfterClear >= 240 && i < indices.length - 1) {
-      writer.write(writer.clearCode);
-      writer.reset();
-      codesAfterClear = 0;
+
+    let disp = i === 0 ? 1 : hsize - i;
+    let found = false;
+    while (htab[i] >= 0) {
+      i -= disp;
+      if (i < 0) {
+        i += hsize;
+      }
+      if (htab[i] === fcode) {
+        ent = codetab[i];
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      continue;
+    }
+
+    output(ent);
+    ent = c;
+
+    if (free_ent < 4096) {
+      codetab[i] = free_ent++;
+      htab[i] = fcode;
+    } else {
+      htab.fill(-1);
+      free_ent = ClearCode + 2;
+      clear_flg = true;
+      output(ClearCode);
     }
   }
 
-  writer.write(writer.endCode);
-  return writer.finish();
+  output(ent);
+  output(EOFCode);
+
+  return new Uint8Array(bytes);
 }
 
 function subBlocks(data: Uint8Array): Uint8Array {

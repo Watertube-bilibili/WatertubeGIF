@@ -1,4 +1,4 @@
-﻿import { common } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { Theme } from '../common/Theme';
 import { AppStateService, HistoryItem } from '../services/AppStateService';
@@ -148,19 +148,33 @@ struct PreviewPage {
                 .fontWeight(800)
                 .fontColor(Color.White)
             }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
           .height(58)
-          .backgroundColor(Theme.accent())
+          .linearGradient({
+            angle: 135,
+            colors: [
+              ['#2F7DFF', 0],
+              ['#21C7D9', 1]
+            ]
+          })
           .borderRadius(29)
-          .shadow({ radius: 24, color: 'rgba(47,125,255,0.35)', offsetX: 0, offsetY: 12 })
+          .shadow({ radius: 24, color: 'rgba(33,199,217,0.35)', offsetX: 0, offsetY: 12 })
           .onClick(() => { this.save(); })
 
           Button() {
-            Text('回到首页')
-              .fontSize(16)
-              .fontWeight(700)
-              .fontColor(Theme.textPrimary(this.colorMode === 0))
+            Row() {
+              Text('回到首页')
+                .fontSize(16)
+                .fontWeight(700)
+                .fontColor(Theme.textPrimary(this.colorMode === 0))
+            }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(0.6)
           .height(58)
@@ -168,6 +182,7 @@ struct PreviewPage {
           .backgroundBlurStyle(Theme.blurStyle(this.colorMode === 0))
           .border({ width: 1, color: Theme.border(this.colorMode === 0) })
           .borderRadius(29)
+          .shadow({ radius: 10, color: 'rgba(0,0,0,0.04)', offsetX: 0, offsetY: 4 })
           .onClick(() => { this.goHome(); })
         }
         .width('100%')

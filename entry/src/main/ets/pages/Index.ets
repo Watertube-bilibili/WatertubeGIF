@@ -1,4 +1,4 @@
-﻿import { common } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
@@ -125,9 +125,9 @@ struct Index {
           .linearGradient({
             angle: 150,
             colors: [
-              [this.colorMode === 0 ? '#0F172A' : '#F8FAFC', 0],
-              [this.colorMode === 0 ? '#1E293B' : '#EFF6FF', 0.5],
-              [this.colorMode === 0 ? '#0F172A' : '#F1F5F9', 1]
+              [this.colorMode === 0 ? '#0B0F19' : '#F4F7FE', 0],
+              [this.colorMode === 0 ? '#151C33' : '#EAF2FF', 0.5],
+              [this.colorMode === 0 ? '#0F1424' : '#F1F5F9', 1]
             ]
           })
 
@@ -232,12 +232,18 @@ struct Index {
                     ListItem() {
                       Row() {
                         Column() {
-                          SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 22, fontColor: Theme.accent() })
+                          SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 22, fontColor: Color.White })
                         }
                         .width(52)
                         .height(52)
                         .borderRadius(14)
-                        .backgroundColor(this.colorMode === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)')
+                        .linearGradient({
+                          angle: 135,
+                          colors: [
+                            ['#2F7DFF', 0],
+                            ['#21C7D9', 1]
+                          ]
+                        })
                         .justifyContent(FlexAlign.Center)
                         .alignItems(HorizontalAlign.Center)
                         .margin({ right: 16 })
@@ -326,8 +332,14 @@ struct Index {
         .width(this.isPicking || this.history.length === 0 ? 150 : 68)
         .height(68)
         .borderRadius(34)
-        .backgroundColor(Theme.accent())
-        .shadow({ radius: 30, color: 'rgba(47,125,255,0.45)', offsetX: 0, offsetY: 15 })
+        .linearGradient({
+          angle: 135,
+          colors: [
+            ['#2F7DFF', 0],
+            ['#6366F1', 1]
+          ]
+        })
+        .shadow({ radius: 24, color: 'rgba(99,102,241,0.4)', offsetX: 0, offsetY: 12 })
         .position({ right: 24, bottom: 40 })
         .onClick(() => { this.startConvert(); })
         .animation({ duration: 400, curve: Curve.Friction })
