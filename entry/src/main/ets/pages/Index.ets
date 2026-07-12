@@ -62,7 +62,7 @@ struct Index {
       }
       let params: ConvertParams = new ConvertParams();
       params.sourceUri = media.uri;
-      params.sourceName = media.name;
+      params.sourceName = this.settings.stealthNames ? '未命名素材' : media.name;
       params.width = this.settings.defaultWidth;
       params.fps = this.settings.defaultFps;
       params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
@@ -113,6 +113,10 @@ struct Index {
     router.pushUrl({ url: 'pages/SettingsPage' });
   }
 
+  private openLab(): void {
+    router.pushUrl({ url: 'pages/LabPage' });
+  }
+
   private async clearHistory(): Promise<void> {
     await AppStateService.clearHistory(this.ctx);
     this.history = [];
@@ -158,6 +162,21 @@ struct Index {
               }
               .alignItems(HorizontalAlign.Start)
               Blank()
+
+              Button() {
+                SymbolBySymbolName({
+                  name: 'flask.fill',
+                  fontSize: 22,
+                  fontColor: Theme.accent()
+                })
+              }
+              .width(44)
+              .height(44)
+              .borderRadius(22)
+              .backgroundColor(Theme.panelBg(this.colorMode === 0))
+              .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+              .margin({ right: 8 })
+              .onClick(() => { this.openLab(); })
 
               Button() {
                 SymbolBySymbolName({

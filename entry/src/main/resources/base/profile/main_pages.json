@@ -3,6 +3,7 @@
     "pages/Index",
     "pages/ConvertPage",
     "pages/PreviewPage",
-    "pages/SettingsPage"
+    "pages/SettingsPage",
+    "pages/LabPage"
   ]
 }

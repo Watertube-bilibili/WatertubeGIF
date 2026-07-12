@@ -26,6 +26,7 @@ export class AppSettings {
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
   lightSenseEnabled: boolean = false;
+  stealthNames: boolean = false;
 }
 
 export class AppStateService {
@@ -90,6 +91,7 @@ export class AppStateService {
       settings.backgroundEnabled = (saved['backgroundEnabled'] as boolean) ?? settings.backgroundEnabled;
       settings.liveViewEnabled = (saved['liveViewEnabled'] as boolean) ?? settings.liveViewEnabled;
       settings.lightSenseEnabled = (saved['lightSenseEnabled'] as boolean) ?? settings.lightSenseEnabled;
+      settings.stealthNames = (saved['stealthNames'] as boolean) ?? settings.stealthNames;
     } catch (e) {
     }
     return settings;

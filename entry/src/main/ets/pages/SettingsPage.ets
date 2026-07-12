@@ -18,6 +18,7 @@ struct SettingsPage {
   @State liveViewEnabled: boolean = true;
   @State systemLiveViewEnabled: boolean = false;
   @State checkingLiveView: boolean = false;
+  @State stealthNames: boolean = false;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private sdkApiVersion: number = deviceInfo.sdkApiVersion;
@@ -33,6 +34,7 @@ struct SettingsPage {
     this.defaultFps = settings.defaultFps;
     this.backgroundEnabled = settings.backgroundEnabled;
     this.liveViewEnabled = settings.liveViewEnabled;
+    this.stealthNames = settings.stealthNames;
     await this.refreshLiveViewStatus();
   }
 
@@ -44,6 +46,7 @@ struct SettingsPage {
     settings.backgroundEnabled = this.backgroundEnabled;
     settings.liveViewEnabled = this.liveViewEnabled;
     settings.lightSenseEnabled = false;
+    settings.stealthNames = this.stealthNames;
     await AppStateService.saveSettings(this.ctx, settings);
   }
 
@@ -304,6 +307,39 @@ struct SettingsPage {
               .lineHeight(18)
               .fontColor(Theme.textSecondary(this.colorMode === 0))
               .margin({ top: 12, bottom: 40 })
+
+            this.sectionTitle('奇怪功能')
+            this.switchRow('社死保护', '历史记录中不显示原视频文件名', this.stealthNames, (checked: boolean) => {
+              this.stealthNames = checked;
+              this.save();
+            })
+
+            Row() {
+              Column() {
+                Text('水管实验室')
+                  .fontSize(16)
+                  .fontWeight(650)
+                  .fontColor(Theme.textPrimary(this.colorMode === 0))
+                Text('参数扭蛋、GIF 黄历和历史抽卡')
+                  .fontSize(12)
+                  .fontColor(Theme.textSecondary(this.colorMode === 0))
+                  .margin({ top: 4 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              Button() {
+                SymbolBySymbolName({ name: 'chevron.right', fontSize: 20, fontColor: Theme.accent() })
+              }
+              .width(40)
+              .height(40)
+              .borderRadius(20)
+              .backgroundColor(Color.Transparent)
+              .onClick(() => { router.pushUrl({ url: 'pages/LabPage' }); })
+            }
+            .width('100%')
+            .height(72)
+            .margin({ bottom: 40 })
+            .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
           }
           .width('100%')
           .padding({ left: 20, right: 20 })
