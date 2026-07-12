@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
-import { AppStateService, HistoryItem } from '../services/AppStateService';
+import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 
@@ -15,6 +15,8 @@ class ConvertParams {
   loop: boolean = true;
   reverse: boolean = false;
   quality: number = AppConstants.DEFAULT_QUALITY;
+  backgroundEnabled: boolean = true;
+  liveViewEnabled: boolean = true;
 }
 
 @Entry
@@ -29,6 +31,7 @@ struct Index {
   @State listTranslateY: number = 20;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+  private settings: AppSettings = new AppSettings();
 
   aboutToAppear(): void {
     this.refreshHome();
@@ -36,6 +39,7 @@ struct Index {
 
   private async refreshHome(): Promise<void> {
     this.history = await AppStateService.loadHistory(this.ctx);
+    this.settings = await AppStateService.loadSettings(this.ctx);
     this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
     
     // Staggered appearance animation
@@ -59,12 +63,14 @@ struct Index {
       let params: ConvertParams = new ConvertParams();
       params.sourceUri = media.uri;
       params.sourceName = media.name;
-      params.width = AppConstants.DEFAULT_WIDTH;
-      params.fps = AppConstants.DEFAULT_FPS;
+      params.width = this.settings.defaultWidth;
+      params.fps = this.settings.defaultFps;
       params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
       params.loop = true;
       params.reverse = false;
-      params.quality = AppConstants.DEFAULT_QUALITY;
+      params.quality = this.settings.defaultQuality;
+      params.backgroundEnabled = this.settings.backgroundEnabled;
+      params.liveViewEnabled = this.settings.liveViewEnabled;
       this.isPicking = false;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {
@@ -101,6 +107,10 @@ struct Index {
         sourceName: item.title
       }
     });
+  }
+
+  private openSettings(): void {
+    router.pushUrl({ url: 'pages/SettingsPage' });
   }
 
   private async clearHistory(): Promise<void> {
@@ -148,7 +158,22 @@ struct Index {
               }
               .alignItems(HorizontalAlign.Start)
               Blank()
-              
+
+              Button() {
+                SymbolBySymbolName({
+                  name: 'gearshape.fill',
+                  fontSize: 22,
+                  fontColor: Theme.textPrimary(this.colorMode === 0)
+                })
+              }
+              .width(44)
+              .height(44)
+              .borderRadius(22)
+              .backgroundColor(Theme.panelBg(this.colorMode === 0))
+              .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+              .margin({ right: 12 })
+              .onClick(() => { this.openSettings(); })
+
               Column() {
                 Text('GIF')
                   .fontSize(18)

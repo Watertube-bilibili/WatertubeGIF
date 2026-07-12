@@ -29,6 +29,8 @@ struct ConvertPage {
   @State loop: boolean = true;
   @State reverse: boolean = false;
   @State quality: number = AppConstants.DEFAULT_QUALITY;
+  @State backgroundEnabled: boolean = true;
+  @State liveViewEnabled: boolean = true;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private encoder: GifEncoder = new GifEncoder();
@@ -44,6 +46,8 @@ struct ConvertPage {
       this.loop = (params['loop'] as boolean) ?? true;
       this.reverse = (params['reverse'] as boolean) ?? false;
       this.quality = (params['quality'] as number) ?? AppConstants.DEFAULT_QUALITY;
+      this.backgroundEnabled = (params['backgroundEnabled'] as boolean) ?? true;
+      this.liveViewEnabled = (params['liveViewEnabled'] as boolean) ?? true;
     }
   }
 
@@ -120,6 +124,8 @@ struct ConvertPage {
     settings.loop = this.loop;
     settings.reverse = this.reverse;
     settings.quality = this.quality;
+    settings.backgroundEnabled = this.backgroundEnabled;
+    settings.liveViewEnabled = this.liveViewEnabled;
 
     let result: GifResult = await this.encoder.convertVideo(
       this.sourceUri,
@@ -135,7 +141,7 @@ struct ConvertPage {
       animateTo({ duration: 300 }, () => {
         this.isConverting = false;
       })
-      promptAction.showToast({ message: '转换失败：无法抽取连续帧', duration: 2200 });
+      promptAction.showToast({ message: '转换失败：请检查视频格式或稍后重试', duration: 2200 });
       return;
     }
 

@@ -1,4 +1,4 @@
-import { common, wantAgent } from '@kit.AbilityKit';
+import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { liveViewManager } from '@kit.LiveViewKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -6,11 +6,18 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 const TAG: string = 'LongTaskService';
 const DOMAIN: number = 0xFF02;
 const LIVE_VIEW_ID: number = 1024;
+const LIVE_VIEW_EVENT: string = 'PROGRESS';
+const ACCENT_COLOR: string = '#FF0A59F7';
+const TRACK_COLOR: string = '#FFE2ECFF';
 
 export class LongTaskService {
   private static instance: LongTaskService;
   private isTaskRunning: boolean = false;
-  private currentProgress: number = 0;
+  private isBackgroundRunning: boolean = false;
+  private isLiveViewRunning: boolean = false;
+  private currentProgress: number = -1;
+  private sequence: number = 0;
+  private clickAgent: WantAgent | undefined = undefined;
 
   private constructor() {
   }
@@ -22,63 +29,121 @@ export class LongTaskService {
     return LongTaskService.instance;
   }
 
-  async startContinuousTask(context: common.UIAbilityContext, title: string, initialMessage: string): Promise<void> {
+  async startContinuousTask(context: common.UIAbilityContext, title: string, initialMessage: string,
+    backgroundEnabled: boolean = true, liveViewEnabled: boolean = true): Promise<void> {
     if (this.isTaskRunning) {
       return;
     }
+    this.isTaskRunning = true;
+    this.currentProgress = 0;
+    this.sequence = 1;
+    this.clickAgent = await this.buildClickAgent(context);
 
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
-      wants: [
-        {
-          bundleName: context.applicationInfo.name,
-          abilityName: context.abilityInfo.name
-        }
-      ],
-      operationType: wantAgent.OperationType.START_ABILITY,
-      requestCode: 0,
-      wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    };
+    if (backgroundEnabled && this.clickAgent !== undefined) {
+      try {
+        await backgroundTaskManager.startBackgroundRunning(context, ['taskKeeping'], this.clickAgent);
+        this.isBackgroundRunning = true;
+        hilog.info(DOMAIN, TAG, 'Continuous task started');
+      } catch (error) {
+        hilog.warn(DOMAIN, TAG, 'Background task is unavailable');
+      }
+    }
 
-    try {
-      let agent = await wantAgent.getWantAgent(wantAgentInfo);
-      await backgroundTaskManager.startBackgroundRunning(context, ['taskKeeping'], agent);
-      this.isTaskRunning = true;
+    if (liveViewEnabled) {
       await this.startLiveView(title, initialMessage);
-      hilog.info(DOMAIN, TAG, 'Continuous task started');
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, 'Failed to start background task');
     }
   }
 
-  async stopContinuousTask(context: common.UIAbilityContext): Promise<void> {
+  async stopContinuousTask(context: common.UIAbilityContext, succeeded: boolean = true,
+    message: string = '转换已结束'): Promise<void> {
     if (!this.isTaskRunning) {
       return;
     }
 
+    await this.stopLiveView(succeeded, message);
+    if (this.isBackgroundRunning) {
+      try {
+        await backgroundTaskManager.stopBackgroundRunning(context);
+        hilog.info(DOMAIN, TAG, 'Continuous task stopped');
+      } catch (error) {
+        hilog.warn(DOMAIN, TAG, 'Failed to stop background task');
+      }
+    }
+
+    this.isTaskRunning = false;
+    this.isBackgroundRunning = false;
+    this.isLiveViewRunning = false;
+    this.currentProgress = -1;
+    this.clickAgent = undefined;
+  }
+
+  async updateLiveViewProgress(progress: number, message: string): Promise<void> {
+    let normalized: number = Math.max(0, Math.min(100, Math.round(progress)));
+    if (!this.isTaskRunning || !this.isLiveViewRunning || this.currentProgress === normalized) {
+      return;
+    }
+
+    this.currentProgress = normalized;
+    this.sequence++;
     try {
-      await backgroundTaskManager.stopBackgroundRunning(context);
-      await this.stopLiveView();
-      hilog.info(DOMAIN, TAG, 'Continuous task stopped');
+      let result: liveViewManager.LiveViewResult = await liveViewManager.updateLiveView(
+        this.buildLiveView('GIF 转换中', message, normalized, 0)
+      );
+      if (result.resultCode !== 0) {
+        hilog.warn(DOMAIN, TAG, 'LiveView update rejected');
+      }
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'Failed to stop background task');
-    } finally {
-      this.isTaskRunning = false;
+      hilog.warn(DOMAIN, TAG, 'Failed to update LiveView');
     }
   }
 
-  private buildLiveView(title: string, message: string, progress: number): liveViewManager.LiveView {
+  private async buildClickAgent(context: common.UIAbilityContext): Promise<WantAgent | undefined> {
+    let wantAgentInfo: wantAgent.WantAgentInfo = {
+      wants: [
+        {
+          bundleName: context.applicationInfo.name,
+          abilityName: context.abilityInfo.name,
+          parameters: {
+            fromLiveView: true
+          }
+        }
+      ],
+      operationType: wantAgent.OperationType.START_ABILITY,
+      requestCode: LIVE_VIEW_ID,
+      wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+    };
+    try {
+      return await wantAgent.getWantAgent(wantAgentInfo);
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, 'Failed to create click action');
+      return undefined;
+    }
+  }
+
+  private buildLiveView(title: string, message: string, progress: number,
+    keepTime: number): liveViewManager.LiveView {
+    let content: liveViewManager.RichText[] = [
+      { text: message },
+      { text: '  ' + progress.toString() + '%', textColor: ACCENT_COLOR }
+    ];
     return {
       id: LIVE_VIEW_ID,
-      event: 'PROCESS',
+      event: LIVE_VIEW_EVENT,
+      sequence: this.sequence,
+      isMute: true,
       liveViewData: {
         primary: {
           title: title,
-          content: [{ text: message }],
+          content: content,
+          keepTime: keepTime,
+          clickAction: this.clickAgent,
           layoutData: {
             layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PROGRESS,
             progress: progress,
-            color: '#2F7DFF',
-            backgroundColor: '#D6E6FF'
+            color: ACCENT_COLOR,
+            backgroundColor: TRACK_COLOR,
+            indicatorType: liveViewManager.IndicatorType.INDICATOR_TYPE_UNDISPLAYED,
+            lineType: liveViewManager.LineType.LINE_TYPE_THICK_SOLID_LINE
           }
         },
         capsule: {
@@ -86,9 +151,10 @@ export class LongTaskService {
           status: 1,
           max: 100,
           progress: progress,
-          content: progress + '%',
-          backgroundColor: '#2F7DFF',
-          indeterminate: false
+          content: progress.toString() + '%',
+          backgroundColor: ACCENT_COLOR,
+          indeterminate: false,
+          isContentDisplayed: true
         }
       }
     };
@@ -96,33 +162,55 @@ export class LongTaskService {
 
   private async startLiveView(title: string, message: string): Promise<void> {
     try {
-      this.currentProgress = 0;
-      await liveViewManager.startLiveView(this.buildLiveView(title, message, 0));
-      hilog.info(DOMAIN, TAG, 'LiveView started');
+      let enabled: boolean = await liveViewManager.isLiveViewEnabled();
+      if (!enabled) {
+        hilog.info(DOMAIN, TAG, 'LiveView is disabled by user or unavailable');
+        return;
+      }
+      await this.clearStaleLiveView();
+      let result: liveViewManager.LiveViewResult = await liveViewManager.startLiveView(
+        this.buildLiveView(title, message, 0, 0)
+      );
+      this.isLiveViewRunning = result.resultCode === 0;
+      if (this.isLiveViewRunning) {
+        hilog.info(DOMAIN, TAG, 'LiveView started');
+      } else {
+        hilog.warn(DOMAIN, TAG, 'LiveView start rejected');
+      }
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'Failed to start LiveView');
+      hilog.warn(DOMAIN, TAG, 'LiveView is unavailable or right is not enabled');
     }
   }
 
-  async updateLiveViewProgress(progress: number, message: string): Promise<void> {
-    if (!this.isTaskRunning || this.currentProgress === progress) {
+  private async clearStaleLiveView(): Promise<void> {
+    try {
+      let staleView: liveViewManager.LiveView = await liveViewManager.getActiveLiveView(LIVE_VIEW_ID);
+      staleView.sequence = (staleView.sequence ?? 0) + 1;
+      await liveViewManager.stopLiveView(staleView);
+      hilog.info(DOMAIN, TAG, 'Stale LiveView cleared');
+    } catch (error) {
+      // No active LiveView with this id is the expected state for a new conversion.
+    }
+  }
+
+  private async stopLiveView(succeeded: boolean, message: string): Promise<void> {
+    if (!this.isLiveViewRunning) {
       return;
     }
-
-    this.currentProgress = progress;
+    this.sequence++;
+    let finalProgress: number = succeeded ? 100 : Math.max(0, this.currentProgress);
+    let title: string = succeeded ? 'GIF 转换完成' : 'GIF 转换未完成';
     try {
-      await liveViewManager.updateLiveView(this.buildLiveView('GIF 转换中', message, progress));
+      let result: liveViewManager.LiveViewResult = await liveViewManager.stopLiveView(
+        this.buildLiveView(title, message, finalProgress, 15)
+      );
+      if (result.resultCode === 0) {
+        hilog.info(DOMAIN, TAG, 'LiveView stopped');
+      } else {
+        hilog.warn(DOMAIN, TAG, 'LiveView stop rejected');
+      }
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'Failed to update LiveView');
-    }
-  }
-
-  private async stopLiveView(): Promise<void> {
-    try {
-      await liveViewManager.stopLiveView(this.buildLiveView('GIF 转换', '转换已结束', 100));
-      hilog.info(DOMAIN, TAG, 'LiveView stopped');
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, 'Failed to stop LiveView');
+      hilog.warn(DOMAIN, TAG, 'Failed to stop LiveView');
     }
   }
 }

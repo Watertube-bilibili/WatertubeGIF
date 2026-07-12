@@ -1,11 +1,9 @@
-import { image } from '@kit.ImageKit';
 import { media } from '@kit.MediaKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { taskpool } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
+import { MP4Parser, ICallBack } from '@ohos/mp4parser';
 import { AppConstants } from '../common/Constants';
-import { GifBinaryEncoder, readPixelMapRgba } from './GifBinaryEncoder';
 import { LongTaskService } from './LongTaskService';
 
 const DOMAIN: number = 0xFF01;
@@ -18,6 +16,8 @@ export class GifSettings {
   loop: boolean = true;
   reverse: boolean = false;
   quality: number = AppConstants.DEFAULT_QUALITY;
+  backgroundEnabled: boolean = true;
+  liveViewEnabled: boolean = true;
 }
 
 export class GifResult {
@@ -28,10 +28,10 @@ export class GifResult {
   size: number = 0;
 }
 
-@Concurrent
-function encodeTask(frames: Uint8Array[], width: number, height: number, frameDelayCs: number, loop: boolean,
-  quality: number): ArrayBuffer {
-  return GifBinaryEncoder.encode(frames, width, height, frameDelayCs, loop, quality);
+class VideoInfo {
+  durationSeconds: number = 0;
+  width: number = 0;
+  height: number = 0;
 }
 
 function fitWidth(targetWidth: number, srcW: number, srcH: number): number[] {
@@ -58,47 +58,27 @@ function effectiveWidth(settings: GifSettings): number {
 }
 
 function effectiveFps(settings: GifSettings): number {
+  let fps: number = Math.max(1, Math.min(30, settings.fps));
   if (settings.quality === AppConstants.QUALITY_WECHAT) {
-    return Math.min(settings.fps, 10);
+    return Math.min(fps, 10);
   }
-  return settings.fps;
+  return fps;
 }
 
-function qualityMaxFrames(quality: number): number {
-  if (quality === AppConstants.QUALITY_ULTRA) {
-    return AppConstants.MAX_FRAMES_ULTRA;
-  }
-  if (quality === AppConstants.QUALITY_WECHAT) {
-    return AppConstants.MAX_FRAMES_WECHAT;
-  }
-  return AppConstants.MAX_FRAMES;
-}
-
-function qualityMemoryBudget(quality: number): number {
-  if (quality === AppConstants.QUALITY_ULTRA) {
-    return AppConstants.MAX_PIXELS_IN_MEMORY_ULTRA;
-  }
-  if (quality === AppConstants.QUALITY_WECHAT) {
-    return AppConstants.MAX_PIXELS_IN_MEMORY_WECHAT;
-  }
-  return AppConstants.MAX_PIXELS_IN_MEMORY;
-}
-
-async function readDurationSeconds(sourceUri: string): Promise<number> {
+async function readVideoInfo(localPath: string): Promise<VideoInfo> {
+  let info: VideoInfo = new VideoInfo();
   let file: fileIo.File | undefined = undefined;
   let extractor: media.AVMetadataExtractor | undefined = undefined;
   try {
-    file = fileIo.openSync(sourceUri, fileIo.OpenMode.READ_ONLY);
+    file = fileIo.openSync(localPath, fileIo.OpenMode.READ_ONLY);
     let stat: fileIo.Stat = fileIo.statSync(file.fd);
     extractor = await media.createAVMetadataExtractor();
     extractor.fdSrc = { fd: file.fd, offset: 0, length: stat.size };
     let metadata: media.AVMetadata = await extractor.fetchMetadata();
     let durationMs: number = Number(metadata.duration ?? '0');
-    if (durationMs > 0) {
-      return Math.max(1, Math.floor(durationMs / 1000));
-    }
-  } catch (e) {
-    hilog.warn(DOMAIN, TAG, 'read duration failed');
+    info.durationSeconds = durationMs > 0 ? Math.max(1, Math.floor(durationMs / 1000)) : 0;
+    info.width = Number(metadata.videoWidth ?? '0');
+    info.height = Number(metadata.videoHeight ?? '0');
   } finally {
     try {
       if (extractor !== undefined) {
@@ -113,7 +93,82 @@ async function readDurationSeconds(sourceUri: string): Promise<number> {
     } catch (e) {
     }
   }
+  return info;
+}
+
+function copySourceToSandbox(sourceUri: string, localPath: string): void {
+  let sourceFile: fileIo.File | undefined = undefined;
+  try {
+    sourceFile = fileIo.openSync(sourceUri, fileIo.OpenMode.READ_ONLY);
+    fileIo.copyFileSync(sourceFile.fd, localPath);
+  } finally {
+    if (sourceFile !== undefined) {
+      fileIo.closeSync(sourceFile);
+    }
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(() => resolve(), milliseconds));
+}
+
+function readFfmpegProgress(progressPath: string, durationSeconds: number): number {
+  try {
+    let content: string = fileIo.readTextSync(progressPath);
+    let lines: string[] = content.split('\n');
+    let outTimeUs: number = 0;
+    for (let line of lines) {
+      let normalized: string = line.trim();
+      if (normalized.startsWith('out_time_us=')) {
+        outTimeUs = Number(normalized.substring('out_time_us='.length));
+      } else if (normalized.startsWith('out_time_ms=')) {
+        outTimeUs = Number(normalized.substring('out_time_ms='.length));
+      }
+    }
+    if (outTimeUs > 0 && durationSeconds > 0) {
+      return Math.max(0, Math.min(99, Math.floor(outTimeUs / (durationSeconds * 1000000) * 100)));
+    }
+  } catch (e) {
+  }
   return 0;
+}
+
+async function runFfmpeg(command: string, progressPath: string, durationSeconds: number,
+  onEncodingProgress: (progress: number) => Promise<void>): Promise<number> {
+  let finished: boolean = false;
+  let exitCode: number = -1;
+  let execution: Promise<void> = new Promise<void>((resolve) => {
+    let callback: ICallBack = {
+      callBackResult(code: number): void {
+        exitCode = code;
+        finished = true;
+        resolve();
+      }
+    };
+    MP4Parser.ffmpegCmd(command, callback);
+  });
+  let lastProgress: number = -1;
+  while (!finished) {
+    await delay(1000);
+    let progress: number = readFfmpegProgress(progressPath, durationSeconds);
+    if (progress !== lastProgress) {
+      lastProgress = progress;
+      await onEncodingProgress(progress);
+    }
+  }
+  await execution;
+  return exitCode;
+}
+
+function buildFfmpegCommand(sourcePath: string, outputPath: string, progressPath: string, durationSeconds: number,
+  width: number, height: number, fps: number, reverse: boolean, loop: boolean): string {
+  let videoFilter: string = 'fps=' + fps.toString() + ',scale=' + width.toString() + ':' +
+    height.toString() + ':flags=lanczos';
+  if (reverse) {
+    videoFilter += ',reverse';
+  }
+  return 'ffmpeg -y -progress ' + progressPath + ' -nostats -i ' + sourcePath + ' -t ' +
+    durationSeconds.toString() + ' -vf ' + videoFilter + ' -an -loop ' + (loop ? '0' : '-1') + ' ' + outputPath;
 }
 
 export class GifEncoder {
@@ -131,136 +186,85 @@ export class GifEncoder {
   ): Promise<GifResult> {
     this.cancelled = false;
     let result: GifResult = new GifResult();
-    let file: fileIo.File | undefined = undefined;
-    let generator: media.AVImageGenerator | undefined = undefined;
-    let frames: Uint8Array[] = [];
-    let outW: number = settings.width;
-    let outH: number = settings.width;
-    let longTaskService = LongTaskService.getInstance();
+    let stamp: string = Date.now().toString();
+    let sourcePath: string = context.cacheDir + '/watertube_input_' + stamp + '.mp4';
+    let progressPath: string = context.cacheDir + '/watertube_progress_' + stamp + '.txt';
+    let outputPath: string = context.filesDir + '/watertube_' + stamp + '.gif';
+    let longTaskService: LongTaskService = LongTaskService.getInstance();
+    let succeeded: boolean = false;
 
     try {
-      await longTaskService.startContinuousTask(context, 'GIF 转换中', '准备视频资源...');
-      
-      file = fileIo.openSync(sourceUri, fileIo.OpenMode.READ_ONLY);
-      let stat: fileIo.Stat = fileIo.statSync(file.fd);
-      generator = await media.createAVImageGenerator();
-      generator.fdSrc = { fd: file.fd, offset: 0, length: stat.size };
-
-      let probe: image.PixelMap = await generator.fetchFrameByTime(
-        0,
-        media.AVImageQueryOptions.AV_IMAGE_QUERY_CLOSEST_SYNC,
-        { width: 1920, height: 1080 }
-      );
-      let info: image.ImageInfo = await probe.getImageInfo();
-      let fitted: number[] = fitWidth(effectiveWidth(settings), info.size.width, info.size.height);
-      outW = fitted[0];
-      outH = fitted[1];
-      try {
-        probe.release();
-      } catch (e) {
+      await longTaskService.startContinuousTask(context, 'GIF 转换中', '准备视频资源...',
+        settings.backgroundEnabled, settings.liveViewEnabled);
+      onProgress(5, '正在准备视频');
+      copySourceToSandbox(sourceUri, sourcePath);
+      if (this.cancelled) {
+        throw new Error('cancelled');
       }
 
-      let sourceSeconds: number = await readDurationSeconds(sourceUri);
-      let clipSeconds: number = settings.seconds <= 0 ? sourceSeconds : settings.seconds;
-      if (clipSeconds <= 0) {
-        clipSeconds = settings.seconds <= 0 ? AppConstants.MAX_DURATION_SECONDS : settings.seconds;
+      onProgress(12, '正在读取视频信息');
+      let videoInfo: VideoInfo = await readVideoInfo(sourcePath);
+      if (videoInfo.width <= 0 || videoInfo.height <= 0) {
+        throw new Error('invalid video size');
       }
-      if (sourceSeconds > 0) {
-        clipSeconds = Math.min(clipSeconds, sourceSeconds);
+      let fitted: number[] = fitWidth(effectiveWidth(settings), videoInfo.width, videoInfo.height);
+      let outW: number = fitted[0];
+      let outH: number = fitted[1];
+      let clipSeconds: number = settings.seconds <= 0 ? videoInfo.durationSeconds : settings.seconds;
+      if (videoInfo.durationSeconds > 0) {
+        clipSeconds = Math.min(clipSeconds, videoInfo.durationSeconds);
       }
       clipSeconds = Math.min(AppConstants.MAX_DURATION_SECONDS, Math.max(1, clipSeconds));
+      let outputFps: number = effectiveFps(settings);
+      let estimatedFrames: number = Math.max(2, Math.floor(clipSeconds * outputFps));
 
-      let maxFrames: number = qualityMaxFrames(settings.quality);
-      let wantedFrames: number = Math.max(2, Math.floor(clipSeconds * effectiveFps(settings)));
-      wantedFrames = Math.min(maxFrames, wantedFrames);
-      let maxByMemory: number = Math.max(2, Math.floor(qualityMemoryBudget(settings.quality) / (outW * outH * 4)));
-      wantedFrames = Math.min(wantedFrames, maxByMemory);
-      let minFramesForGifDelay: number = Math.ceil((clipSeconds * 100) / 65535) + 1;
-      wantedFrames = Math.max(wantedFrames, Math.min(maxFrames, minFramesForGifDelay));
-      let intervalUs: number = wantedFrames <= 1 ? 1000000 : Math.floor((clipSeconds * 1000000) / wantedFrames);
-      let frameDelayCs: number = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / wantedFrames)));
-      let pixelParam: media.PixelMapParams = { width: outW, height: outH };
-      let lastUiProgress: number = -1;
-      let lastLiveProgress: number = -1;
-
-      for (let i: number = 0; i < wantedFrames; i++) {
-        if (this.cancelled) {
-          throw new Error('cancelled');
-        }
-        let timeUs: number = i * intervalUs;
-        let pixelMap: image.PixelMap = await generator.fetchFrameByTime(
-          timeUs,
-          media.AVImageQueryOptions.AV_IMAGE_QUERY_CLOSEST,
-          pixelParam
-        );
-        let pixels: Uint8Array = await readPixelMapRgba(pixelMap, outW, outH);
-        try {
-          pixelMap.release();
-        } catch (e) {
-        }
-
-        frames.push(pixels);
-        
-        let currentProgress = Math.floor((i + 1) * 55 / wantedFrames);
-        if (currentProgress !== lastUiProgress) {
-          lastUiProgress = currentProgress;
-          onProgress(currentProgress, '正在抽取画面');
-        }
-        if (currentProgress >= lastLiveProgress + 5 || i === wantedFrames - 1) {
-          lastLiveProgress = currentProgress;
-          await longTaskService.updateLiveViewProgress(currentProgress, `正在抽取画面 ${Math.round((i + 1) / wantedFrames * 100)}%`);
-        }
-        if ((i & 3) === 0) {
-          await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
-        }
+      if (this.cancelled) {
+        throw new Error('cancelled');
+      }
+      onProgress(20, '正在使用 FFmpeg 生成 GIF');
+      await longTaskService.updateLiveViewProgress(20, '正在使用 FFmpeg 生成 GIF，请稍候...');
+      let command: string = buildFfmpegCommand(sourcePath, outputPath, progressPath, clipSeconds, outW, outH, outputFps,
+        settings.reverse, settings.loop);
+      let code: number = await runFfmpeg(command, progressPath, clipSeconds, async (encodingProgress: number) => {
+        let overallProgress: number = 20 + Math.floor(encodingProgress * 0.75);
+        onProgress(overallProgress, '正在生成 GIF ' + encodingProgress.toString() + '%');
+        await longTaskService.updateLiveViewProgress(overallProgress,
+          '正在生成 GIF ' + encodingProgress.toString() + '%');
+      });
+      if (code !== 0) {
+        throw new Error('ffmpeg failed: ' + code.toString());
+      }
+      let outputStat: fileIo.Stat = fileIo.statSync(outputPath);
+      if (outputStat.size <= 0) {
+        throw new Error('empty gif');
       }
 
-      if (settings.reverse) {
-        frames.reverse();
-      }
-      if (frames.length < 2) {
-        throw new Error('no animated frames');
-      }
-
-      onProgress(62, '正在编码 GIF');
-      await longTaskService.updateLiveViewProgress(62, '正在编码 GIF, 请稍候...');
-      
-      frameDelayCs = Math.max(2, Math.min(65535, Math.round((clipSeconds * 100) / frames.length)));
-      let task: taskpool.Task = new taskpool.Task(encodeTask, frames, outW, outH, frameDelayCs, settings.loop,
-        settings.quality);
-      let data: ArrayBuffer = await taskpool.execute(task) as ArrayBuffer;
-
-      let outPath: string = context.filesDir + '/watertube_' + Date.now().toString() + '.gif';
-      let outFile: fileIo.File = fileIo.openSync(outPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
-      fileIo.writeSync(outFile.fd, data);
-      fileIo.closeSync(outFile);
-
-      result.path = outPath;
+      result.path = outputPath;
       result.width = outW;
       result.height = outH;
-      result.frames = frames.length;
-      result.size = data.byteLength;
-      
+      result.frames = estimatedFrames;
+      result.size = outputStat.size;
+      succeeded = true;
       onProgress(100, '转换完成');
       await longTaskService.updateLiveViewProgress(100, '转换完成');
       return result;
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'convertVideo failed');
+      try {
+        fileIo.unlinkSync(outputPath);
+      } catch (e) {
+      }
       return new GifResult();
     } finally {
-      await longTaskService.stopContinuousTask(context);
       try {
-        if (generator !== undefined) {
-          await generator.release();
-        }
+        fileIo.unlinkSync(sourcePath);
       } catch (e) {
       }
       try {
-        if (file !== undefined) {
-          fileIo.closeSync(file);
-        }
+        fileIo.unlinkSync(progressPath);
       } catch (e) {
       }
+      await longTaskService.stopContinuousTask(context, succeeded, succeeded ? 'GIF 已生成' : '转换失败');
     }
   }
 }

@@ -1,9 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
+import { AppConstants } from '../common/Constants';
 
 const STORE_NAME: string = 'watertube_state';
 const KEY_SUPPORT_UNTIL: string = 'support_until';
 const KEY_HISTORY: string = 'history';
+const KEY_SETTINGS: string = 'settings';
 const WEEK_MS: number = 7 * 24 * 60 * 60 * 1000;
 
 export class HistoryItem {
@@ -15,6 +17,15 @@ export class HistoryItem {
   frames: number = 0;
   size: number = 0;
   createdAt: number = 0;
+}
+
+export class AppSettings {
+  defaultQuality: number = AppConstants.DEFAULT_QUALITY;
+  defaultWidth: number = AppConstants.DEFAULT_WIDTH;
+  defaultFps: number = AppConstants.DEFAULT_FPS;
+  backgroundEnabled: boolean = true;
+  liveViewEnabled: boolean = true;
+  lightSenseEnabled: boolean = false;
 }
 
 export class AppStateService {
@@ -64,6 +75,29 @@ export class AppStateService {
   static async clearHistory(ctx: common.UIAbilityContext): Promise<void> {
     let store: preferences.Preferences = await AppStateService.store(ctx);
     await store.put(KEY_HISTORY, '[]');
+    await store.flush();
+  }
+
+  static async loadSettings(ctx: common.UIAbilityContext): Promise<AppSettings> {
+    let settings: AppSettings = new AppSettings();
+    try {
+      let store: preferences.Preferences = await AppStateService.store(ctx);
+      let raw: string = await store.get(KEY_SETTINGS, '{}') as string;
+      let saved: Record<string, Object> = JSON.parse(raw) as Record<string, Object>;
+      settings.defaultQuality = Number(saved['defaultQuality'] ?? settings.defaultQuality);
+      settings.defaultWidth = Number(saved['defaultWidth'] ?? settings.defaultWidth);
+      settings.defaultFps = Number(saved['defaultFps'] ?? settings.defaultFps);
+      settings.backgroundEnabled = (saved['backgroundEnabled'] as boolean) ?? settings.backgroundEnabled;
+      settings.liveViewEnabled = (saved['liveViewEnabled'] as boolean) ?? settings.liveViewEnabled;
+      settings.lightSenseEnabled = (saved['lightSenseEnabled'] as boolean) ?? settings.lightSenseEnabled;
+    } catch (e) {
+    }
+    return settings;
+  }
+
+  static async saveSettings(ctx: common.UIAbilityContext, settings: AppSettings): Promise<void> {
+    let store: preferences.Preferences = await AppStateService.store(ctx);
+    await store.put(KEY_SETTINGS, JSON.stringify(settings));
     await store.flush();
   }
 }

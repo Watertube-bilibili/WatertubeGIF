@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "pages/ConvertPage",
-    "pages/PreviewPage"
+    "pages/PreviewPage",
+    "pages/SettingsPage"
   ]
 }
