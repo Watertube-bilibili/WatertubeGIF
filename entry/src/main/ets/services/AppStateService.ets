@@ -17,6 +17,7 @@ export class HistoryItem {
   frames: number = 0;
   size: number = 0;
   createdAt: number = 0;
+  protectedName: boolean = false;
 }
 
 export class AppSettings {
@@ -27,6 +28,7 @@ export class AppSettings {
   liveViewEnabled: boolean = true;
   lightSenseEnabled: boolean = false;
   stealthNames: boolean = false;
+  smartSizeEnabled: boolean = true;
 }
 
 export class AppStateService {
@@ -79,6 +81,29 @@ export class AppStateService {
     await store.flush();
   }
 
+  static async anonymizeHistory(ctx: common.UIAbilityContext): Promise<number> {
+    let history: HistoryItem[] = await AppStateService.loadHistory(ctx);
+    let changed: number = 0;
+    history.forEach((item: HistoryItem) => {
+      if (item.title !== '未命名素材' || !item.protectedName) {
+        item.title = '未命名素材';
+        item.protectedName = true;
+        changed++;
+      }
+    });
+    if (changed > 0) {
+      let store: preferences.Preferences = await AppStateService.store(ctx);
+      await store.put(KEY_HISTORY, JSON.stringify(history));
+      await store.flush();
+    }
+    return changed;
+  }
+
+  static async countProtectedHistory(ctx: common.UIAbilityContext): Promise<number> {
+    let history: HistoryItem[] = await AppStateService.loadHistory(ctx);
+    return history.filter((item: HistoryItem): boolean => item.protectedName === true).length;
+  }
+
   static async loadSettings(ctx: common.UIAbilityContext): Promise<AppSettings> {
     let settings: AppSettings = new AppSettings();
     try {
@@ -92,6 +117,7 @@ export class AppStateService {
       settings.liveViewEnabled = (saved['liveViewEnabled'] as boolean) ?? settings.liveViewEnabled;
       settings.lightSenseEnabled = (saved['lightSenseEnabled'] as boolean) ?? settings.lightSenseEnabled;
       settings.stealthNames = (saved['stealthNames'] as boolean) ?? settings.stealthNames;
+      settings.smartSizeEnabled = (saved['smartSizeEnabled'] as boolean) ?? settings.smartSizeEnabled;
     } catch (e) {
     }
     return settings;

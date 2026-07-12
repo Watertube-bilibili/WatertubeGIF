@@ -1,11 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { router } from '@kit.ArkUI';
-import { liveViewManager } from '@kit.LiveViewKit';
+import { promptAction, router } from '@kit.ArkUI';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 import { AppSettings, AppStateService } from '../services/AppStateService';
+import { CapabilityResult, LongTaskService } from '../services/LongTaskService';
 
 @Entry
 @Component
@@ -19,6 +19,13 @@ struct SettingsPage {
   @State systemLiveViewEnabled: boolean = false;
   @State checkingLiveView: boolean = false;
   @State stealthNames: boolean = false;
+  @State smartSizeEnabled: boolean = true;
+  @State protectedHistoryCount: number = 0;
+  @State backgroundStatus: string = '正在检查系统授权';
+  @State liveViewStatus: string = '正在检查系统状态';
+  @State saveStatus: string = '设置已加载';
+  @State testingLiveView: boolean = false;
+  @State requestingBackground: boolean = false;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private sdkApiVersion: number = deviceInfo.sdkApiVersion;
@@ -35,19 +42,33 @@ struct SettingsPage {
     this.backgroundEnabled = settings.backgroundEnabled;
     this.liveViewEnabled = settings.liveViewEnabled;
     this.stealthNames = settings.stealthNames;
+    this.smartSizeEnabled = settings.smartSizeEnabled;
+    this.protectedHistoryCount = await AppStateService.countProtectedHistory(this.ctx);
+    let backgroundResult: CapabilityResult = await LongTaskService.getInstance().checkBackgroundCapability(this.ctx);
+    this.backgroundStatus = backgroundResult.message;
+    if (!backgroundResult.available) {
+      this.backgroundEnabled = false;
+    }
     await this.refreshLiveViewStatus();
   }
 
   private async save(): Promise<void> {
-    let settings: AppSettings = new AppSettings();
-    settings.defaultQuality = this.defaultQuality;
-    settings.defaultWidth = this.defaultWidth;
-    settings.defaultFps = this.defaultFps;
-    settings.backgroundEnabled = this.backgroundEnabled;
-    settings.liveViewEnabled = this.liveViewEnabled;
-    settings.lightSenseEnabled = false;
-    settings.stealthNames = this.stealthNames;
-    await AppStateService.saveSettings(this.ctx, settings);
+    try {
+      let settings: AppSettings = new AppSettings();
+      settings.defaultQuality = this.defaultQuality;
+      settings.defaultWidth = this.defaultWidth;
+      settings.defaultFps = this.defaultFps;
+      settings.backgroundEnabled = this.backgroundEnabled;
+      settings.liveViewEnabled = this.liveViewEnabled;
+      settings.lightSenseEnabled = false;
+      settings.stealthNames = this.stealthNames;
+      settings.smartSizeEnabled = this.smartSizeEnabled;
+      await AppStateService.saveSettings(this.ctx, settings);
+      this.saveStatus = '已保存 · ' + new Date().toLocaleTimeString();
+    } catch (error) {
+      this.saveStatus = '保存失败，请重试';
+      promptAction.showToast({ message: '设置保存失败', duration: 1800 });
+    }
   }
 
   private async refreshLiveViewStatus(): Promise<void> {
@@ -56,9 +77,12 @@ struct SettingsPage {
     }
     this.checkingLiveView = true;
     try {
-      this.systemLiveViewEnabled = await liveViewManager.isLiveViewEnabled();
+      let result: CapabilityResult = await LongTaskService.getInstance().checkLiveViewCapability();
+      this.systemLiveViewEnabled = result.available;
+      this.liveViewStatus = result.message;
     } catch (e) {
       this.systemLiveViewEnabled = false;
+      this.liveViewStatus = '实况窗状态检查失败';
     }
     this.checkingLiveView = false;
   }
@@ -76,6 +100,78 @@ struct SettingsPage {
       this.defaultFps = AppConstants.DEFAULT_FPS;
     }
     this.save();
+  }
+
+  private async chooseWidth(value: number): Promise<void> {
+    this.defaultWidth = value;
+    await this.save();
+  }
+
+  private async chooseFps(value: number): Promise<void> {
+    this.defaultFps = value;
+    await this.save();
+  }
+
+  private async changeSmartSize(checked: boolean): Promise<void> {
+    this.smartSizeEnabled = checked;
+    await this.save();
+    promptAction.showToast({ message: checked ? '已开启横竖屏智能尺寸' : '已改为固定输出宽度', duration: 1500 });
+  }
+
+  private async changeBackground(checked: boolean): Promise<void> {
+    if (!checked) {
+      this.backgroundEnabled = false;
+      await this.save();
+      this.saveStatus = '已关闭后台长任务';
+      return;
+    }
+    if (this.requestingBackground) {
+      return;
+    }
+    this.requestingBackground = true;
+    let result: CapabilityResult = await LongTaskService.getInstance().requestBackgroundAuthorization(this.ctx);
+    this.backgroundStatus = result.message;
+    this.backgroundEnabled = result.available;
+    this.requestingBackground = false;
+    await this.save();
+    promptAction.showToast({ message: result.message, duration: 2200 });
+  }
+
+  private async changeLiveView(checked: boolean): Promise<void> {
+    this.liveViewEnabled = checked;
+    await this.save();
+    if (checked) {
+      await this.refreshLiveViewStatus();
+    }
+    promptAction.showToast({
+      message: checked ? '已设为转换时尝试创建实况窗' : '已关闭转换实况窗',
+      duration: 1600
+    });
+  }
+
+  private async testLiveView(): Promise<void> {
+    if (this.testingLiveView) {
+      return;
+    }
+    this.testingLiveView = true;
+    let result: CapabilityResult = await LongTaskService.getInstance().testLiveView(this.ctx);
+    this.liveViewStatus = result.message;
+    this.systemLiveViewEnabled = result.available;
+    this.testingLiveView = false;
+    promptAction.showToast({ message: result.message, duration: 2600 });
+  }
+
+  private async changeStealthNames(checked: boolean): Promise<void> {
+    this.stealthNames = checked;
+    let changed: number = 0;
+    if (checked) {
+      changed = await AppStateService.anonymizeHistory(this.ctx);
+      this.protectedHistoryCount = await AppStateService.countProtectedHistory(this.ctx);
+    }
+    await this.save();
+    let message: string = checked ? '社死保护已开启，已隐藏 ' + changed.toString() + ' 条历史名称' :
+      '社死保护已关闭，已隐藏的旧名称不会自动恢复';
+    promptAction.showToast({ message: message, duration: 2400 });
   }
 
   @Builder
@@ -98,7 +194,7 @@ struct SettingsPage {
       .fontColor(selected ? Color.White : Theme.textPrimary(this.colorMode === 0))
       .borderRadius(6)
       .backgroundColor(selected ? Theme.accent() : Color.Transparent)
-      .onClick(action)
+      .onClick(() => { action(); })
   }
 
   @Builder
@@ -116,10 +212,11 @@ struct SettingsPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      .onClick(() => { onChange(!value); })
 
       Toggle({ type: ToggleType.Switch, isOn: value })
         .selectedColor(Theme.accent())
-        .onChange(onChange)
+        .onChange((checked: boolean) => { onChange(checked); })
     }
     .width('100%')
     .height(72)
@@ -205,6 +302,16 @@ struct SettingsPage {
             })
             .shadow({ radius: 20, color: 'rgba(20,130,160,0.24)', offsetX: 0, offsetY: 8 })
 
+            Row() {
+              SymbolBySymbolName({ name: 'checkmark.circle.fill', fontSize: 16, fontColor: Theme.success() })
+              Text(this.saveStatus)
+                .fontSize(12)
+                .fontColor(Theme.textSecondary(this.colorMode === 0))
+                .margin({ left: 8 })
+            }
+            .width('100%')
+            .height(36)
+
             this.sectionTitle('默认质量')
             Row({ space: 4 }) {
               this.choice('微信', this.defaultQuality === AppConstants.QUALITY_WECHAT,
@@ -222,9 +329,9 @@ struct SettingsPage {
 
             this.sectionTitle('默认宽度')
             Row({ space: 4 }) {
-              this.choice('320 px', this.defaultWidth === 320, () => { this.defaultWidth = 320; this.save(); })
-              this.choice('480 px', this.defaultWidth === 480, () => { this.defaultWidth = 480; this.save(); })
-              this.choice('720 px', this.defaultWidth === 720, () => { this.defaultWidth = 720; this.save(); })
+              this.choice('320 px', this.defaultWidth === 320, () => { this.chooseWidth(320); })
+              this.choice('480 px', this.defaultWidth === 480, () => { this.chooseWidth(480); })
+              this.choice('720 px', this.defaultWidth === 720, () => { this.chooseWidth(720); })
             }
             .width('100%')
             .height(48)
@@ -232,11 +339,14 @@ struct SettingsPage {
             .borderRadius(8)
             .backgroundColor(Theme.panelBg(this.colorMode === 0))
 
+            this.switchRow('智能尺寸', '识别横竖屏，选定数值作为画面最长边', this.smartSizeEnabled,
+              (checked: boolean) => { this.changeSmartSize(checked); })
+
             this.sectionTitle('默认帧率')
             Row({ space: 4 }) {
-              this.choice('8 fps', this.defaultFps === 8, () => { this.defaultFps = 8; this.save(); })
-              this.choice('12 fps', this.defaultFps === 12, () => { this.defaultFps = 12; this.save(); })
-              this.choice('20 fps', this.defaultFps === 20, () => { this.defaultFps = 20; this.save(); })
+              this.choice('8 fps', this.defaultFps === 8, () => { this.chooseFps(8); })
+              this.choice('12 fps', this.defaultFps === 12, () => { this.chooseFps(12); })
+              this.choice('20 fps', this.defaultFps === 20, () => { this.chooseFps(20); })
             }
             .width('100%')
             .height(48)
@@ -245,36 +355,34 @@ struct SettingsPage {
             .backgroundColor(Theme.panelBg(this.colorMode === 0))
 
             this.sectionTitle('后台与通知')
-            this.switchRow('后台长任务', '退出应用后继续转换', this.backgroundEnabled, (checked: boolean) => {
-              this.backgroundEnabled = checked;
-              this.save();
-            })
-            this.switchRow('实况窗', this.systemLiveViewEnabled ? '系统开关已开启' : '系统开关未开启或权益不可用',
-              this.liveViewEnabled, (checked: boolean) => {
-                this.liveViewEnabled = checked;
-                this.save();
-              })
+            this.switchRow(this.requestingBackground ? '正在请求授权' : '后台媒体处理', this.backgroundStatus,
+              this.backgroundEnabled, (checked: boolean) => { this.changeBackground(checked); })
+            this.switchRow('转换时尝试实况窗', this.liveViewStatus,
+              this.liveViewEnabled, (checked: boolean) => { this.changeLiveView(checked); })
 
             Row() {
-              Text('实况窗系统状态')
+              Text('实况窗连接测试')
                 .fontSize(14)
                 .fontColor(Theme.textSecondary(this.colorMode === 0))
               Blank()
               Button() {
-                if (this.checkingLiveView) {
+                if (this.checkingLiveView || this.testingLiveView) {
                   LoadingProgress()
                     .width(18)
                     .height(18)
                     .color(Theme.accent())
                 } else {
-                  SymbolBySymbolName({ name: 'arrow.clockwise', fontSize: 20, fontColor: Theme.accent() })
+                  Text('测试')
+                    .fontSize(13)
+                    .fontWeight(700)
+                    .fontColor(Theme.accent())
                 }
               }
-              .width(40)
+              .width(54)
               .height(40)
               .borderRadius(20)
               .backgroundColor(Color.Transparent)
-              .onClick(() => { this.refreshLiveViewStatus(); })
+              .onClick(() => { this.testLiveView(); })
             }
             .width('100%')
             .height(54)
@@ -309,10 +417,8 @@ struct SettingsPage {
               .margin({ top: 12, bottom: 40 })
 
             this.sectionTitle('奇怪功能')
-            this.switchRow('社死保护', '历史记录中不显示原视频文件名', this.stealthNames, (checked: boolean) => {
-              this.stealthNames = checked;
-              this.save();
-            })
+            this.switchRow('社死保护', '已保护 ' + this.protectedHistoryCount.toString() + ' 条历史，新记录也会自动隐藏名称',
+              this.stealthNames, (checked: boolean) => { this.changeStealthNames(checked); })
 
             Row() {
               Column() {

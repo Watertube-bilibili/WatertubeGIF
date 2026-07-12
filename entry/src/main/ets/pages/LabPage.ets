@@ -17,6 +17,7 @@ class LabConvertParams {
   quality: number = AppConstants.DEFAULT_QUALITY;
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
+  smartSizeEnabled: boolean = true;
 }
 
 @Entry
@@ -119,6 +120,7 @@ struct LabPage {
       params.quality = this.quality;
       params.backgroundEnabled = this.settings.backgroundEnabled;
       params.liveViewEnabled = this.settings.liveViewEnabled;
+      params.smartSizeEnabled = this.settings.smartSizeEnabled;
       this.isPicking = false;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {

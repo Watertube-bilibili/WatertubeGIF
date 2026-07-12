@@ -31,6 +31,7 @@ struct ConvertPage {
   @State quality: number = AppConstants.DEFAULT_QUALITY;
   @State backgroundEnabled: boolean = true;
   @State liveViewEnabled: boolean = true;
+  @State smartSizeEnabled: boolean = true;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private encoder: GifEncoder = new GifEncoder();
@@ -48,6 +49,7 @@ struct ConvertPage {
       this.quality = (params['quality'] as number) ?? AppConstants.DEFAULT_QUALITY;
       this.backgroundEnabled = (params['backgroundEnabled'] as boolean) ?? true;
       this.liveViewEnabled = (params['liveViewEnabled'] as boolean) ?? true;
+      this.smartSizeEnabled = (params['smartSizeEnabled'] as boolean) ?? true;
     }
   }
 
@@ -126,6 +128,7 @@ struct ConvertPage {
     settings.quality = this.quality;
     settings.backgroundEnabled = this.backgroundEnabled;
     settings.liveViewEnabled = this.liveViewEnabled;
+    settings.smartSizeEnabled = this.smartSizeEnabled;
 
     let result: GifResult = await this.encoder.convertVideo(
       this.sourceUri,
@@ -309,7 +312,8 @@ struct ConvertPage {
 
       Column({ space: 12 }) {
         this.qualityBlock()
-        this.sliderBlock('画面宽度', this.outputWidth + ' px', 160, 960, 20, this.outputWidth, (value: number) => {
+        this.sliderBlock(this.smartSizeEnabled ? '画面最长边' : '画面宽度', this.outputWidth + ' px',
+          160, 960, 20, this.outputWidth, (value: number) => {
           this.outputWidth = value;
         })
         this.sliderBlock('帧率', this.fps + ' fps', 1, 30, 1, this.fps, (value: number) => {
@@ -320,6 +324,10 @@ struct ConvertPage {
             this.seconds = value;
           })
 
+        this.switchRow('智能尺寸', '识别横竖屏，所选数值作为画面最长边', this.smartSizeEnabled,
+          (checked: boolean) => {
+            this.smartSizeEnabled = checked;
+          })
         this.switchRow('循环播放', '生成的 GIF 会自动循环', this.loop, (checked: boolean) => {
           this.loop = checked;
         })
@@ -409,7 +417,8 @@ struct ConvertPage {
         .fontColor(Theme.textPrimary(this.colorMode === 0))
         .margin({ top: 32 })
 
-      Text(this.qualityLabel() + ' · ' + this.outputWidth + 'px · ' + this.fps + 'fps · ' + this.durationLabel())
+      Text(this.qualityLabel() + ' · ' + (this.smartSizeEnabled ? '最长边 ' : '宽度 ') + this.outputWidth +
+        'px · ' + this.fps + 'fps · ' + this.durationLabel())
         .fontSize(14)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .margin({ top: 10 })

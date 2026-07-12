@@ -18,6 +18,7 @@ export class GifSettings {
   quality: number = AppConstants.DEFAULT_QUALITY;
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
+  smartSizeEnabled: boolean = true;
 }
 
 export class GifResult {
@@ -32,21 +33,33 @@ class VideoInfo {
   durationSeconds: number = 0;
   width: number = 0;
   height: number = 0;
+  orientation: number = 0;
 }
 
-function fitWidth(targetWidth: number, srcW: number, srcH: number): number[] {
+function evenDimension(value: number): number {
+  let rounded: number = Math.max(2, Math.round(value));
+  return rounded % 2 === 0 ? rounded : rounded - 1;
+}
+
+function fitSize(targetSize: number, srcW: number, srcH: number, smartSizeEnabled: boolean): number[] {
   if (srcW <= 0 || srcH <= 0) {
-    return [targetWidth, targetWidth];
+    let fallback: number = evenDimension(targetSize);
+    return [fallback, fallback];
   }
-  let width: number = Math.max(160, Math.min(960, targetWidth));
-  if (width % 2 !== 0) {
-    width--;
+  let target: number = evenDimension(Math.max(160, Math.min(960, targetSize)));
+  let width: number = target;
+  let height: number = target;
+  if (smartSizeEnabled && srcH > srcW) {
+    height = target;
+    width = evenDimension(target * srcW / srcH);
+  } else {
+    width = target;
+    height = evenDimension(target * srcH / srcW);
   }
-  let height: number = Math.round(width * srcH / srcW);
-  if (height % 2 !== 0) {
-    height--;
+  if (height > 960) {
+    width = evenDimension(width * 960 / height);
+    height = 960;
   }
-  height = Math.max(120, Math.min(960, height));
   return [width, height];
 }
 
@@ -79,6 +92,13 @@ async function readVideoInfo(localPath: string): Promise<VideoInfo> {
     info.durationSeconds = durationMs > 0 ? Math.max(1, Math.floor(durationMs / 1000)) : 0;
     info.width = Number(metadata.videoWidth ?? '0');
     info.height = Number(metadata.videoHeight ?? '0');
+    info.orientation = Number(metadata.videoOrientation ?? '0');
+    let normalizedOrientation: number = ((info.orientation % 360) + 360) % 360;
+    if (normalizedOrientation === 90 || normalizedOrientation === 270) {
+      let rawWidth: number = info.width;
+      info.width = info.height;
+      info.height = rawWidth;
+    }
   } finally {
     try {
       if (extractor !== undefined) {
@@ -163,7 +183,7 @@ async function runFfmpeg(command: string, progressPath: string, durationSeconds:
 function buildFfmpegCommand(sourcePath: string, outputPath: string, progressPath: string, durationSeconds: number,
   width: number, height: number, fps: number, reverse: boolean, loop: boolean): string {
   let videoFilter: string = 'fps=' + fps.toString() + ',scale=' + width.toString() + ':' +
-    height.toString() + ':flags=lanczos';
+    height.toString() + ':flags=lanczos,setsar=1';
   if (reverse) {
     videoFilter += ',reverse';
   }
@@ -207,7 +227,8 @@ export class GifEncoder {
       if (videoInfo.width <= 0 || videoInfo.height <= 0) {
         throw new Error('invalid video size');
       }
-      let fitted: number[] = fitWidth(effectiveWidth(settings), videoInfo.width, videoInfo.height);
+      let fitted: number[] = fitSize(effectiveWidth(settings), videoInfo.width, videoInfo.height,
+        settings.smartSizeEnabled);
       let outW: number = fitted[0];
       let outH: number = fitted[1];
       let clipSeconds: number = settings.seconds <= 0 ? videoInfo.durationSeconds : settings.seconds;

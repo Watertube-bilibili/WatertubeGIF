@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { Theme } from '../common/Theme';
-import { AppStateService, HistoryItem } from '../services/AppStateService';
+import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService } from '../services/MediaService';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 
@@ -39,8 +39,10 @@ struct PreviewPage {
     }
     this.historySaved = true;
     let item: HistoryItem = new HistoryItem();
+    let settings: AppSettings = await AppStateService.loadSettings(this.ctx);
     item.id = Date.now().toString();
-    item.title = this.sourceName;
+    item.title = settings.stealthNames ? '未命名素材' : this.sourceName;
+    item.protectedName = settings.stealthNames;
     item.path = this.outputPath;
     item.width = this.widthValue;
     item.height = this.heightValue;

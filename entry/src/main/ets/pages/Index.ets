@@ -17,6 +17,7 @@ class ConvertParams {
   quality: number = AppConstants.DEFAULT_QUALITY;
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
+  smartSizeEnabled: boolean = true;
 }
 
 @Entry
@@ -34,13 +35,19 @@ struct Index {
   private settings: AppSettings = new AppSettings();
 
   aboutToAppear(): void {
-    this.refreshHome();
+    this.refreshHome(true);
   }
 
-  private async refreshHome(): Promise<void> {
+  onPageShow(): void {
+    this.refreshHome(false);
+  }
+
+  private async refreshHome(checkSupportDialog: boolean): Promise<void> {
     this.history = await AppStateService.loadHistory(this.ctx);
     this.settings = await AppStateService.loadSettings(this.ctx);
-    this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
+    if (checkSupportDialog) {
+      this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
+    }
     
     // Staggered appearance animation
     animateTo({ duration: 800, curve: Curve.FastOutSlowIn }, () => {
@@ -71,6 +78,7 @@ struct Index {
       params.quality = this.settings.defaultQuality;
       params.backgroundEnabled = this.settings.backgroundEnabled;
       params.liveViewEnabled = this.settings.liveViewEnabled;
+      params.smartSizeEnabled = this.settings.smartSizeEnabled;
       this.isPicking = false;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {
@@ -293,12 +301,23 @@ struct Index {
                         .margin({ right: 16 })
 
                         Column() {
-                          Text(item.title.length > 0 ? item.title : '未命名动图')
-                            .fontSize(16)
-                            .fontWeight(700)
-                            .fontColor(Theme.textPrimary(this.colorMode === 0))
-                            .maxLines(1)
-                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          Row() {
+                            Text(item.title.length > 0 ? item.title : '未命名动图')
+                              .fontSize(16)
+                              .fontWeight(700)
+                              .fontColor(Theme.textPrimary(this.colorMode === 0))
+                              .maxLines(1)
+                              .textOverflow({ overflow: TextOverflow.Ellipsis })
+                              .layoutWeight(1)
+                            if (item.protectedName) {
+                              Text('已隐藏')
+                                .fontSize(10)
+                                .fontWeight(700)
+                                .fontColor(Theme.success())
+                                .margin({ left: 8 })
+                            }
+                          }
+                          .width('100%')
                           Text(item.width + '×' + item.height + ' · ' + MediaService.formatBytes(item.size))
                             .fontSize(12)
                             .fontColor(Theme.textSecondary(this.colorMode === 0))
