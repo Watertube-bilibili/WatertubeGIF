@@ -1,7 +1,9 @@
 import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
+import { media } from '@kit.MediaKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { VideoMetadata } from '../common/MediaModels';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'MediaService';
@@ -40,6 +42,44 @@ export class MediaService {
       return false;
     }
     return result === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+  }
+
+  static async inspectVideo(sourceUri: string): Promise<VideoMetadata> {
+    let metadata: VideoMetadata = new VideoMetadata();
+    let source: fileIo.File | undefined = undefined;
+    let extractor: media.AVMetadataExtractor | undefined = undefined;
+    try {
+      source = fileIo.openSync(sourceUri, fileIo.OpenMode.READ_ONLY);
+      let stat: fileIo.Stat = fileIo.statSync(source.fd);
+      extractor = await media.createAVMetadataExtractor();
+      extractor.fdSrc = { fd: source.fd, offset: 0, length: stat.size };
+      let avMetadata: media.AVMetadata = await extractor.fetchMetadata();
+      let durationMs: number = Number(avMetadata.duration ?? '0');
+      metadata.durationSeconds = durationMs > 0 ? Math.max(1, Math.floor(durationMs / 1000)) : 0;
+      metadata.width = Number(avMetadata.videoWidth ?? '0');
+      metadata.height = Number(avMetadata.videoHeight ?? '0');
+      metadata.orientation = Number(avMetadata.videoOrientation ?? '0');
+      let normalizedOrientation: number = ((metadata.orientation % 360) + 360) % 360;
+      if (normalizedOrientation === 90 || normalizedOrientation === 270) {
+        let rawWidth: number = metadata.width;
+        metadata.width = metadata.height;
+        metadata.height = rawWidth;
+      }
+      return metadata;
+    } finally {
+      try {
+        if (extractor !== undefined) {
+          await extractor.release();
+        }
+      } catch (e) {
+      }
+      try {
+        if (source !== undefined) {
+          fileIo.closeSync(source);
+        }
+      } catch (e) {
+      }
+    }
   }
 
   static async saveGifToGallery(ctx: common.UIAbilityContext, gifPath: string): Promise<boolean> {
@@ -81,6 +121,9 @@ export class MediaService {
   }
 
   static formatBytes(size: number): string {
+    if (size >= 1024 * 1024 * 1024) {
+      return (size / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
     if (size >= 1024 * 1024) {
       return (size / 1024 / 1024).toFixed(2) + ' MB';
     }

@@ -1,24 +1,20 @@
-import { media } from '@kit.MediaKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { MP4Parser, ICallBack } from '@ohos/mp4parser';
-import { AppConstants } from '../common/Constants';
 import { LongTaskService } from './LongTaskService';
+import { GifPlan, GifPlanningService, GifPlanOptions } from './GifPlanningService';
+import { MediaService } from './MediaService';
+import { VideoMetadata } from '../common/MediaModels';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'GifPipeline';
 
-export class GifSettings {
-  width: number = AppConstants.DEFAULT_WIDTH;
-  fps: number = AppConstants.DEFAULT_FPS;
-  seconds: number = AppConstants.DEFAULT_DURATION_SECONDS;
+export class GifSettings extends GifPlanOptions {
   loop: boolean = true;
   reverse: boolean = false;
-  quality: number = AppConstants.DEFAULT_QUALITY;
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
-  smartSizeEnabled: boolean = true;
 }
 
 export class GifResult {
@@ -27,93 +23,6 @@ export class GifResult {
   height: number = 0;
   frames: number = 0;
   size: number = 0;
-}
-
-class VideoInfo {
-  durationSeconds: number = 0;
-  width: number = 0;
-  height: number = 0;
-  orientation: number = 0;
-}
-
-function evenDimension(value: number): number {
-  let rounded: number = Math.max(2, Math.round(value));
-  return rounded % 2 === 0 ? rounded : rounded - 1;
-}
-
-function fitSize(targetSize: number, srcW: number, srcH: number, smartSizeEnabled: boolean): number[] {
-  if (srcW <= 0 || srcH <= 0) {
-    let fallback: number = evenDimension(targetSize);
-    return [fallback, fallback];
-  }
-  let target: number = evenDimension(Math.max(160, Math.min(960, targetSize)));
-  let width: number = target;
-  let height: number = target;
-  if (smartSizeEnabled && srcH > srcW) {
-    height = target;
-    width = evenDimension(target * srcW / srcH);
-  } else {
-    width = target;
-    height = evenDimension(target * srcH / srcW);
-  }
-  if (height > 960) {
-    width = evenDimension(width * 960 / height);
-    height = 960;
-  }
-  return [width, height];
-}
-
-function effectiveWidth(settings: GifSettings): number {
-  if (settings.quality === AppConstants.QUALITY_WECHAT) {
-    return Math.min(settings.width, 360);
-  }
-  return settings.width;
-}
-
-function effectiveFps(settings: GifSettings): number {
-  let fps: number = Math.max(1, Math.min(30, settings.fps));
-  if (settings.quality === AppConstants.QUALITY_WECHAT) {
-    return Math.min(fps, 10);
-  }
-  return fps;
-}
-
-async function readVideoInfo(localPath: string): Promise<VideoInfo> {
-  let info: VideoInfo = new VideoInfo();
-  let file: fileIo.File | undefined = undefined;
-  let extractor: media.AVMetadataExtractor | undefined = undefined;
-  try {
-    file = fileIo.openSync(localPath, fileIo.OpenMode.READ_ONLY);
-    let stat: fileIo.Stat = fileIo.statSync(file.fd);
-    extractor = await media.createAVMetadataExtractor();
-    extractor.fdSrc = { fd: file.fd, offset: 0, length: stat.size };
-    let metadata: media.AVMetadata = await extractor.fetchMetadata();
-    let durationMs: number = Number(metadata.duration ?? '0');
-    info.durationSeconds = durationMs > 0 ? Math.max(1, Math.floor(durationMs / 1000)) : 0;
-    info.width = Number(metadata.videoWidth ?? '0');
-    info.height = Number(metadata.videoHeight ?? '0');
-    info.orientation = Number(metadata.videoOrientation ?? '0');
-    let normalizedOrientation: number = ((info.orientation % 360) + 360) % 360;
-    if (normalizedOrientation === 90 || normalizedOrientation === 270) {
-      let rawWidth: number = info.width;
-      info.width = info.height;
-      info.height = rawWidth;
-    }
-  } finally {
-    try {
-      if (extractor !== undefined) {
-        await extractor.release();
-      }
-    } catch (e) {
-    }
-    try {
-      if (file !== undefined) {
-        fileIo.closeSync(file);
-      }
-    } catch (e) {
-    }
-  }
-  return info;
 }
 
 function copySourceToSandbox(sourceUri: string, localPath: string): void {
@@ -223,21 +132,15 @@ export class GifEncoder {
       }
 
       onProgress(12, '正在读取视频信息');
-      let videoInfo: VideoInfo = await readVideoInfo(sourcePath);
+      let videoInfo: VideoMetadata = await MediaService.inspectVideo(sourcePath);
       if (videoInfo.width <= 0 || videoInfo.height <= 0) {
         throw new Error('invalid video size');
       }
-      let fitted: number[] = fitSize(effectiveWidth(settings), videoInfo.width, videoInfo.height,
-        settings.smartSizeEnabled);
-      let outW: number = fitted[0];
-      let outH: number = fitted[1];
-      let clipSeconds: number = settings.seconds <= 0 ? videoInfo.durationSeconds : settings.seconds;
-      if (videoInfo.durationSeconds > 0) {
-        clipSeconds = Math.min(clipSeconds, videoInfo.durationSeconds);
-      }
-      clipSeconds = Math.min(AppConstants.MAX_DURATION_SECONDS, Math.max(1, clipSeconds));
-      let outputFps: number = effectiveFps(settings);
-      let estimatedFrames: number = Math.max(2, Math.floor(clipSeconds * outputFps));
+      let plan: GifPlan = GifPlanningService.createPlan(settings, videoInfo);
+      let outW: number = plan.width;
+      let outH: number = plan.height;
+      let clipSeconds: number = plan.durationSeconds;
+      let outputFps: number = plan.fps;
 
       if (this.cancelled) {
         throw new Error('cancelled');
@@ -263,7 +166,7 @@ export class GifEncoder {
       result.path = outputPath;
       result.width = outW;
       result.height = outH;
-      result.frames = estimatedFrames;
+      result.frames = plan.frames;
       result.size = outputStat.size;
       succeeded = true;
       onProgress(100, '转换完成');

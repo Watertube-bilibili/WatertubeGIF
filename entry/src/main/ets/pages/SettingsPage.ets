@@ -6,6 +6,7 @@ import { Theme } from '../common/Theme';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 import { AppSettings, AppStateService } from '../services/AppStateService';
 import { CapabilityResult, LongTaskService } from '../services/LongTaskService';
+import { MaterialCapability, MaterialService } from '../services/MaterialService';
 
 @Entry
 @Component
@@ -26,6 +27,8 @@ struct SettingsPage {
   @State saveStatus: string = '设置已加载';
   @State testingLiveView: boolean = false;
   @State requestingBackground: boolean = false;
+  @State lightSenseEnabled: boolean = true;
+  @State materialCapability: MaterialCapability = new MaterialCapability();
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private sdkApiVersion: number = deviceInfo.sdkApiVersion;
@@ -41,6 +44,8 @@ struct SettingsPage {
     this.defaultFps = settings.defaultFps;
     this.backgroundEnabled = settings.backgroundEnabled;
     this.liveViewEnabled = settings.liveViewEnabled;
+    this.lightSenseEnabled = settings.lightSenseEnabled;
+    this.materialCapability = MaterialService.checkCapability();
     this.stealthNames = settings.stealthNames;
     this.smartSizeEnabled = settings.smartSizeEnabled;
     this.protectedHistoryCount = await AppStateService.countProtectedHistory(this.ctx);
@@ -60,7 +65,8 @@ struct SettingsPage {
       settings.defaultFps = this.defaultFps;
       settings.backgroundEnabled = this.backgroundEnabled;
       settings.liveViewEnabled = this.liveViewEnabled;
-      settings.lightSenseEnabled = false;
+      settings.lightSenseEnabled = this.lightSenseEnabled;
+      settings.lightSensePreferenceVersion = 1;
       settings.stealthNames = this.stealthNames;
       settings.smartSizeEnabled = this.smartSizeEnabled;
       await AppStateService.saveSettings(this.ctx, settings);
@@ -146,6 +152,19 @@ struct SettingsPage {
     promptAction.showToast({
       message: checked ? '已设为转换时尝试创建实况窗' : '已关闭转换实况窗',
       duration: 1600
+    });
+  }
+
+  private async changeLightSense(checked: boolean): Promise<void> {
+    if (!this.materialCapability.apiAvailable) {
+      promptAction.showToast({ message: this.materialCapability.message, duration: 2200 });
+      return;
+    }
+    this.lightSenseEnabled = checked;
+    await this.save();
+    promptAction.showToast({
+      message: checked ? '沉浸光感已开启，返回首页即可看到效果' : '沉浸光感已关闭',
+      duration: 1800
     });
   }
 
@@ -395,21 +414,27 @@ struct SettingsPage {
                   .fontSize(16)
                   .fontWeight(650)
                   .fontColor(Theme.textPrimary(this.colorMode === 0))
-                Text('需要 API 26 与 DevEco Studio 7')
+                Text(this.materialCapability.message)
                   .fontSize(12)
-                  .fontColor(Theme.warning())
+                  .fontColor(this.materialCapability.immersiveSupported ?
+                    Theme.success() : Theme.textSecondary(this.colorMode === 0))
                   .margin({ top: 4 })
+                  .maxLines(2)
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: false })
-                .enabled(false)
+              .onClick(() => { this.changeLightSense(!this.lightSenseEnabled); })
+              Toggle({ type: ToggleType.Switch, isOn: this.lightSenseEnabled })
+                .selectedColor(Theme.accent())
+                .enabled(this.materialCapability.apiAvailable)
+                .onChange((checked: boolean) => { this.changeLightSense(checked); })
             }
             .width('100%')
-            .height(72)
+            .height(82)
+            .padding({ top: 8, bottom: 8 })
             .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
 
-            Text('当前使用兼容材质；升级开发套件后可启用 ImmersiveMaterial。')
+            Text('基于 UIDesignKit 的 HDS 系统材质。系统会结合背景、光线与温控策略实时渲染，不支持时自动回退。')
               .width('100%')
               .fontSize(12)
               .lineHeight(18)

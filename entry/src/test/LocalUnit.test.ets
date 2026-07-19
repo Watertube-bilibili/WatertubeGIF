@@ -1,33 +1,48 @@
-import { describe, beforeAll, beforeEach, afterEach, afterAll, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
+import { AppConstants } from '../main/ets/common/Constants';
+import { VideoMetadata } from '../main/ets/common/MediaModels';
+import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/services/GifPlanningService';
 
 export default function localUnitTest() {
-  describe('localUnitTest', () => {
-    // Defines a test suite. Two parameters are supported: test suite name and test suite function.
-    beforeAll(() => {
-      // Presets an action, which is performed only once before all test cases of the test suite start.
-      // This API supports only one parameter: preset action function.
+  describe('GifPlanningService', () => {
+    it('preserves portrait aspect ratio', 0, () => {
+      let metadata: VideoMetadata = new VideoMetadata();
+      metadata.width = 1080;
+      metadata.height = 1920;
+      metadata.durationSeconds = 40;
+      let options: GifPlanOptions = new GifPlanOptions();
+      options.width = 480;
+      options.fps = 12;
+      let plan: GifPlan = GifPlanningService.createPlan(options, metadata);
+
+      expect(plan.width).assertEqual(270);
+      expect(plan.height).assertEqual(480);
+      expect(plan.frames).assertEqual(480);
     });
-    beforeEach(() => {
-      // Presets an action, which is performed before each unit test case starts.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: preset action function.
+
+    it('keeps full two hour duration in recommendations', 0, () => {
+      let metadata: VideoMetadata = new VideoMetadata();
+      metadata.width = 1920;
+      metadata.height = 1080;
+      metadata.durationSeconds = AppConstants.MAX_DURATION_SECONDS;
+      let recommendation: GifPlanOptions = GifPlanningService.recommend(metadata, 0);
+      let plan: GifPlan = GifPlanningService.createPlan(recommendation, metadata);
+
+      expect(recommendation.seconds).assertEqual(0);
+      expect(plan.durationSeconds).assertEqual(AppConstants.MAX_DURATION_SECONDS);
+      expect(plan.width <= 360).assertTrue();
+      expect(plan.fps >= 1).assertTrue();
     });
-    afterEach(() => {
-      // Presets a clear action, which is performed after each unit test case ends.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: clear action function.
-    });
-    afterAll(() => {
-      // Presets a clear action, which is performed after all test cases of the test suite end.
-      // This API supports only one parameter: clear action function.
-    });
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
+
+    it('reports a bounded estimate range', 0, () => {
+      let metadata: VideoMetadata = new VideoMetadata();
+      metadata.width = 1920;
+      metadata.height = 1080;
+      metadata.durationSeconds = 30;
+      let plan: GifPlan = GifPlanningService.createPlan(new GifPlanOptions(), metadata);
+
+      expect(plan.estimatedLowBytes > 0).assertTrue();
+      expect(plan.estimatedHighBytes > plan.estimatedLowBytes).assertTrue();
     });
   });
 }

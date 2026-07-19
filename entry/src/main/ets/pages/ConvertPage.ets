@@ -4,6 +4,9 @@ import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { GifEncoder, GifResult, GifSettings } from '../services/GifEncoder';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
+import { GifPlan, GifPlanningService, GifPlanOptions } from '../services/GifPlanningService';
+import { MediaService } from '../services/MediaService';
+import { VideoMetadata } from '../common/MediaModels';
 
 class PreviewParams {
   outputPath: string = '';
@@ -32,9 +35,13 @@ struct ConvertPage {
   @State backgroundEnabled: boolean = true;
   @State liveViewEnabled: boolean = true;
   @State smartSizeEnabled: boolean = true;
+  @State metadataReady: boolean = false;
+  @State metadataLoading: boolean = true;
+  @State metadataStatus: string = '正在读取视频信息';
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private encoder: GifEncoder = new GifEncoder();
+  private videoMetadata: VideoMetadata = new VideoMetadata();
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, Object>;
@@ -51,6 +58,7 @@ struct ConvertPage {
       this.liveViewEnabled = (params['liveViewEnabled'] as boolean) ?? true;
       this.smartSizeEnabled = (params['smartSizeEnabled'] as boolean) ?? true;
     }
+    this.loadVideoMetadata();
   }
 
   aboutToDisappear(): void {
@@ -84,6 +92,110 @@ struct ConvertPage {
       return '微信质量';
     }
     return '中等质量';
+  }
+
+  private async loadVideoMetadata(): Promise<void> {
+    if (this.sourceUri.length === 0) {
+      this.metadataLoading = false;
+      this.metadataStatus = '没有可读取的视频';
+      return;
+    }
+    this.metadataReady = false;
+    this.metadataLoading = true;
+    this.metadataStatus = '正在读取视频信息';
+    try {
+      let metadata: VideoMetadata = await MediaService.inspectVideo(this.sourceUri);
+      if (metadata.width <= 0 || metadata.height <= 0 || metadata.durationSeconds <= 0) {
+        this.metadataStatus = '视频信息不完整，仍可尝试转换';
+        return;
+      }
+      this.videoMetadata = metadata;
+      this.metadataReady = true;
+      this.metadataStatus = metadata.width.toString() + ' × ' + metadata.height.toString() + ' · ' +
+        this.formatDuration(metadata.durationSeconds);
+    } catch (e) {
+      this.metadataStatus = '暂时无法读取视频信息，仍可尝试转换';
+    } finally {
+      this.metadataLoading = false;
+    }
+  }
+
+  private formatDuration(value: number): string {
+    if (value < 60) {
+      return value.toString() + ' 秒';
+    }
+    let minutes: number = Math.floor(value / 60);
+    let seconds: number = value % 60;
+    if (minutes < 60) {
+      return seconds === 0 ? minutes.toString() + ' 分钟' : minutes.toString() + ' 分 ' + seconds.toString() + ' 秒';
+    }
+    let hours: number = Math.floor(minutes / 60);
+    let minuteRest: number = minutes % 60;
+    return minuteRest === 0 ? hours.toString() + ' 小时' : hours.toString() + ' 小时 ' + minuteRest.toString() + ' 分钟';
+  }
+
+  private planOptions(): GifPlanOptions {
+    let options: GifPlanOptions = new GifPlanOptions();
+    options.width = this.outputWidth;
+    options.fps = this.fps;
+    options.seconds = this.seconds;
+    options.quality = this.quality;
+    options.smartSizeEnabled = this.smartSizeEnabled;
+    return options;
+  }
+
+  private currentPlan(): GifPlan {
+    return GifPlanningService.createPlan(this.planOptions(), this.videoMetadata);
+  }
+
+  private estimateLabel(): string {
+    let plan: GifPlan = this.currentPlan();
+    return MediaService.formatBytes(plan.estimatedLowBytes) + ' 至 ' + MediaService.formatBytes(plan.estimatedHighBytes);
+  }
+
+  private planLabel(): string {
+    let plan: GifPlan = this.currentPlan();
+    return plan.width.toString() + ' × ' + plan.height.toString() + ' · 约 ' + plan.frames.toString() + ' 帧';
+  }
+
+  private budgetRiskLabel(): string {
+    let highBytes: number = this.currentPlan().estimatedHighBytes;
+    if (highBytes <= 24 * 1024 * 1024) {
+      return '体积轻巧';
+    }
+    if (highBytes <= 100 * 1024 * 1024) {
+      return '体积适中';
+    }
+    if (highBytes <= 300 * 1024 * 1024) {
+      return '体积较大';
+    }
+    return '超大文件预警';
+  }
+
+  private budgetRiskColor(): string {
+    let highBytes: number = this.currentPlan().estimatedHighBytes;
+    if (highBytes <= 24 * 1024 * 1024) {
+      return Theme.success();
+    }
+    if (highBytes <= 100 * 1024 * 1024) {
+      return Theme.accent();
+    }
+    return Theme.warning();
+  }
+
+  private applySmartRecommendation(): void {
+    if (!this.metadataReady) {
+      promptAction.showToast({ message: '视频信息尚未读取完成', duration: 1600 });
+      return;
+    }
+    let recommendation: GifPlanOptions = GifPlanningService.recommend(this.videoMetadata, this.seconds);
+    animateTo({ duration: 260 }, () => {
+      this.quality = recommendation.quality;
+      this.outputWidth = recommendation.width;
+      this.fps = recommendation.fps;
+      this.smartSizeEnabled = true;
+    });
+    promptAction.showToast({ message: '已平衡尺寸与帧率，截取时长未改动', duration: 1800 });
   }
 
   private applyQualityPreset(quality: number): void {
@@ -223,6 +335,96 @@ struct ConvertPage {
   }
 
   @Builder
+  private budgetBlock() {
+    Column() {
+      Row() {
+        Column() {
+          Text('智能体积预算')
+            .fontSize(15)
+            .fontWeight(800)
+            .fontColor(Theme.textPrimary(this.colorMode === 0))
+          Text(this.metadataStatus)
+            .fontSize(12)
+            .fontColor(Theme.textSecondary(this.colorMode === 0))
+            .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        if (this.metadataLoading) {
+          LoadingProgress()
+            .width(22)
+            .height(22)
+            .color(Theme.accent())
+        } else if (!this.metadataReady) {
+          Button() {
+            SymbolBySymbolName({
+              name: 'arrow.clockwise',
+              fontSize: 18,
+              fontColor: Theme.accent()
+            })
+          }
+          .width(38)
+          .height(38)
+          .borderRadius(8)
+          .backgroundColor(Color.Transparent)
+          .onClick(() => { this.loadVideoMetadata(); })
+        }
+      }
+      .width('100%')
+
+      if (this.metadataReady) {
+        Row() {
+          Column() {
+            Text('预计体积')
+              .fontSize(11)
+              .fontColor(Theme.textSecondary(this.colorMode === 0))
+            Text(this.estimateLabel())
+              .fontSize(20)
+              .fontWeight(850)
+              .fontColor(Theme.textPrimary(this.colorMode === 0))
+              .margin({ top: 4 })
+            Text(this.planLabel())
+              .fontSize(12)
+              .fontColor(Theme.textSecondary(this.colorMode === 0))
+              .margin({ top: 5 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Text(this.budgetRiskLabel())
+            .fontSize(12)
+            .fontWeight(750)
+            .fontColor(this.budgetRiskColor())
+        }
+        .width('100%')
+        .margin({ top: 16 })
+
+        Button() {
+          Row({ space: 7 }) {
+            SymbolBySymbolName({ name: 'sparkles', fontSize: 17, fontColor: Color.White })
+            Text('一键智能平衡')
+              .fontSize(14)
+              .fontWeight(750)
+              .fontColor(Color.White)
+          }
+        }
+        .width('100%')
+        .height(44)
+        .borderRadius(8)
+        .backgroundColor(Theme.accent())
+        .margin({ top: 16 })
+        .onClick(() => { this.applySmartRecommendation(); })
+      }
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(20)
+    .backgroundColor(Theme.panelBg(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+  }
+
+  @Builder
   private sliderBlock(title: string, valueText: string, min: number, max: number, step: number, value: number,
     change: (value: number) => void) {
     Column() {
@@ -311,6 +513,7 @@ struct ConvertPage {
         .margin({ top: 8, bottom: 24 })
 
       Column({ space: 12 }) {
+        this.budgetBlock()
         this.qualityBlock()
         this.sliderBlock(this.smartSizeEnabled ? '画面最长边' : '画面宽度', this.outputWidth + ' px',
           160, 960, 20, this.outputWidth, (value: number) => {

@@ -23,6 +23,7 @@ export struct SymbolBySymbolName {
       'shuffle': '⇄',
       'trash.fill': '×',
       'arrow.clockwise': '↻',
+      'sparkles': '✦',
       'play.fill': '▶',
       'pause.fill': 'Ⅱ',
       'stop.fill': '■',

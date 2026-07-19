@@ -1,9 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
+import { HdsNavigation, HdsNavigationTitleMode, TitleBarStyleOptions } from '@kit.UIDesignKit';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
+import { MaterialCapability, MaterialService } from '../services/MaterialService';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 
 class ConvertParams {
@@ -30,6 +32,8 @@ struct Index {
   @State isPicking: boolean = false;
   @State listOpacity: number = 0;
   @State listTranslateY: number = 20;
+  @State lightSenseEnabled: boolean = true;
+  @State materialCapability: MaterialCapability = new MaterialCapability();
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private settings: AppSettings = new AppSettings();
@@ -45,6 +49,8 @@ struct Index {
   private async refreshHome(checkSupportDialog: boolean): Promise<void> {
     this.history = await AppStateService.loadHistory(this.ctx);
     this.settings = await AppStateService.loadSettings(this.ctx);
+    this.lightSenseEnabled = this.settings.lightSenseEnabled;
+    this.materialCapability = MaterialService.checkCapability();
     if (checkSupportDialog) {
       this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
     }
@@ -138,8 +144,75 @@ struct Index {
       date.getMinutes().toString().padStart(2, '0');
   }
 
+  private titleBarStyle(): TitleBarStyleOptions {
+    return MaterialService.titleBarStyle(this.lightSenseEnabled, this.materialCapability);
+  }
+
+  @Builder
+  private homeTitleBar() {
+    Row() {
+      Column() {
+        Text('水管 GIF')
+          .fontSize(24)
+          .fontWeight(850)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+        Text('轻量、清晰、动图转换专家')
+          .fontSize(12)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .margin({ top: 3 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Button() {
+        SymbolBySymbolName({
+          name: 'flask.fill',
+          fontSize: 21,
+          fontColor: Theme.accent()
+        })
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor(Color.Transparent)
+      .margin({ right: 4 })
+      .onClick(() => { this.openLab(); })
+
+      Button() {
+        SymbolBySymbolName({
+          name: 'gearshape.fill',
+          fontSize: 21,
+          fontColor: Theme.textPrimary(this.colorMode === 0)
+        })
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => { this.openSettings(); })
+
+      Column() {
+        Text('GIF')
+          .fontSize(14)
+          .fontWeight(900)
+          .fontColor(Color.White)
+      }
+      .width(44)
+      .height(44)
+      .borderRadius(14)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .backgroundColor(Theme.accent())
+      .shadow({ radius: 12, color: 'rgba(47,125,255,0.25)', offsetX: 0, offsetY: 5 })
+      .margin({ left: 8 })
+    }
+    .width('100%')
+    .height(72)
+    .padding({ left: 20, right: 20 })
+  }
+
   build() {
-    Navigation() {
+    HdsNavigation() {
       Stack() {
         Column()
           .width('100%')
@@ -155,69 +228,6 @@ struct Index {
 
         Scroll() {
           Column() {
-            Row() {
-              Column() {
-                Text('水管 GIF')
-                  .fontSize(38)
-                  .fontWeight(900)
-                  .fontColor(Theme.textPrimary(this.colorMode === 0))
-                  .letterSpacing(1)
-                Text('轻量、清晰、动图转换专家')
-                  .fontSize(14)
-                  .fontWeight(500)
-                  .fontColor(Theme.textSecondary(this.colorMode === 0))
-                  .margin({ top: 8 })
-              }
-              .alignItems(HorizontalAlign.Start)
-              Blank()
-
-              Button() {
-                SymbolBySymbolName({
-                  name: 'flask.fill',
-                  fontSize: 22,
-                  fontColor: Theme.accent()
-                })
-              }
-              .width(44)
-              .height(44)
-              .borderRadius(22)
-              .backgroundColor(Theme.panelBg(this.colorMode === 0))
-              .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-              .margin({ right: 8 })
-              .onClick(() => { this.openLab(); })
-
-              Button() {
-                SymbolBySymbolName({
-                  name: 'gearshape.fill',
-                  fontSize: 22,
-                  fontColor: Theme.textPrimary(this.colorMode === 0)
-                })
-              }
-              .width(44)
-              .height(44)
-              .borderRadius(22)
-              .backgroundColor(Theme.panelBg(this.colorMode === 0))
-              .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-              .margin({ right: 12 })
-              .onClick(() => { this.openSettings(); })
-
-              Column() {
-                Text('GIF')
-                  .fontSize(18)
-                  .fontWeight(900)
-                  .fontColor(Color.White)
-              }
-              .width(64)
-              .height(64)
-              .borderRadius(20)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              .backgroundColor(Theme.accent())
-              .shadow({ radius: 18, color: 'rgba(47,125,255,0.28)', offsetX: 0, offsetY: 8 })
-            }
-            .width('100%')
-            .padding({ left: 24, right: 24, top: 40, bottom: 24 })
-
             Column() {
               Row() {
                 Text('最近记录')
@@ -494,7 +504,15 @@ struct Index {
       .width('100%')
       .height('100%')
     }
-    .hideTitleBar(true)
+    .titleBar({
+      style: this.titleBarStyle(),
+      content: {
+        stackBuilder: this.homeTitleBar
+      },
+      enableComponentSafeArea: true
+    })
+    .titleMode(HdsNavigationTitleMode.FULL)
+    .hideTitleBar(false)
     .mode(NavigationMode.Stack)
     .backgroundColor(Theme.pageBg(this.colorMode === 0))
   }
