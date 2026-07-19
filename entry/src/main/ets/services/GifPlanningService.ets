@@ -38,10 +38,16 @@ function qualityDensity(quality: number): number {
   if (quality === AppConstants.QUALITY_WECHAT) {
     return 0.16;
   }
+  if (quality === AppConstants.QUALITY_ECONOMY) {
+    return 0.09;
+  }
   return 0.30;
 }
 
 function effectiveWidth(options: GifPlanOptions): number {
+  if (options.quality === AppConstants.QUALITY_ECONOMY) {
+    return Math.min(options.width, 280);
+  }
   if (options.quality === AppConstants.QUALITY_WECHAT) {
     return Math.min(options.width, 360);
   }
@@ -50,6 +56,9 @@ function effectiveWidth(options: GifPlanOptions): number {
 
 function effectiveFps(options: GifPlanOptions): number {
   let fps: number = clamp(options.fps, 1, 30);
+  if (options.quality === AppConstants.QUALITY_ECONOMY) {
+    return Math.min(fps, 8);
+  }
   if (options.quality === AppConstants.QUALITY_WECHAT) {
     return Math.min(fps, 10);
   }
@@ -124,9 +133,12 @@ export class GifPlanningService {
     } else if (duration <= 180) {
       recommendation.quality = AppConstants.QUALITY_MEDIUM;
       recommendation.fps = duration <= 45 ? 15 : 12;
-    } else {
+    } else if (duration <= 1800) {
       recommendation.quality = AppConstants.QUALITY_WECHAT;
       recommendation.fps = duration <= 600 ? 8 : duration <= 1800 ? 6 : 3;
+    } else {
+      recommendation.quality = AppConstants.QUALITY_ECONOMY;
+      recommendation.fps = 3;
     }
 
     let targetBytes: number = duration <= 30 ? 18 * MIB : duration <= 120 ? 32 * MIB :
@@ -139,7 +151,8 @@ export class GifPlanningService {
     let targetPixels: number = availableBytes / frameCount / qualityDensity(recommendation.quality);
     let longestEdge: number = Math.sqrt(targetPixels / aspectFactor);
     let qualityMaximum: number = recommendation.quality === AppConstants.QUALITY_ULTRA ? 720 :
-      recommendation.quality === AppConstants.QUALITY_MEDIUM ? 600 : 360;
+      recommendation.quality === AppConstants.QUALITY_MEDIUM ? 600 :
+        recommendation.quality === AppConstants.QUALITY_WECHAT ? 360 : 280;
     let sourceMaximum: number = sourceLong > 0 ? sourceLong : qualityMaximum;
     longestEdge = clamp(longestEdge, 160, Math.min(qualityMaximum, sourceMaximum));
     recommendation.width = Math.max(160, Math.round(longestEdge / 20) * 20);

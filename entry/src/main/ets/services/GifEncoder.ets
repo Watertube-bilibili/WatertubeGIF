@@ -6,6 +6,7 @@ import { LongTaskService } from './LongTaskService';
 import { GifPlan, GifPlanningService, GifPlanOptions } from './GifPlanningService';
 import { MediaService } from './MediaService';
 import { VideoMetadata } from '../common/MediaModels';
+import { AppConstants } from '../common/Constants';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'GifPipeline';
@@ -90,9 +91,12 @@ async function runFfmpeg(command: string, progressPath: string, durationSeconds:
 }
 
 function buildFfmpegCommand(sourcePath: string, outputPath: string, progressPath: string, durationSeconds: number,
-  width: number, height: number, fps: number, reverse: boolean, loop: boolean): string {
+  width: number, height: number, fps: number, quality: number, reverse: boolean, loop: boolean): string {
+  let scaleFlags: string = quality === AppConstants.QUALITY_ECONOMY ? 'fast_bilinear' :
+    quality === AppConstants.QUALITY_WECHAT ? 'bilinear' :
+      quality === AppConstants.QUALITY_ULTRA ? 'lanczos' : 'bicubic';
   let videoFilter: string = 'fps=' + fps.toString() + ',scale=' + width.toString() + ':' +
-    height.toString() + ':flags=lanczos,setsar=1';
+    height.toString() + ':flags=' + scaleFlags + ',setsar=1';
   if (reverse) {
     videoFilter += ',reverse';
   }
@@ -148,7 +152,7 @@ export class GifEncoder {
       onProgress(20, '正在使用 FFmpeg 生成 GIF');
       await longTaskService.updateLiveViewProgress(20, '正在使用 FFmpeg 生成 GIF，请稍候...');
       let command: string = buildFfmpegCommand(sourcePath, outputPath, progressPath, clipSeconds, outW, outH, outputFps,
-        settings.reverse, settings.loop);
+        settings.quality, settings.reverse, settings.loop);
       let code: number = await runFfmpeg(command, progressPath, clipSeconds, async (encodingProgress: number) => {
         let overallProgress: number = 20 + Math.floor(encodingProgress * 0.75);
         onProgress(overallProgress, '正在生成 GIF ' + encodingProgress.toString() + '%');

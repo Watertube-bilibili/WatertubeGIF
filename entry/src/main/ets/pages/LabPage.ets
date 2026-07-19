@@ -5,6 +5,7 @@ import { Theme } from '../common/Theme';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
+import { OutputPreset, OutputPresetService } from '../common/OutputPresets';
 
 class LabConvertParams {
   sourceUri: string = '';
@@ -51,18 +52,21 @@ struct LabPage {
 
   private rollPreset(): void {
     this.quality = this.randomFrom([
+      AppConstants.QUALITY_ECONOMY,
       AppConstants.QUALITY_WECHAT,
       AppConstants.QUALITY_MEDIUM,
       AppConstants.QUALITY_ULTRA
     ]);
-    if (this.quality === AppConstants.QUALITY_WECHAT) {
-      this.outputWidth = 320;
+    let preset: OutputPreset = OutputPresetService.resolve(this.quality);
+    this.outputWidth = preset.width;
+    this.fps = preset.fps;
+    if (this.quality === AppConstants.QUALITY_ECONOMY) {
+      this.fps = this.randomFrom([4, 6]);
+    } else if (this.quality === AppConstants.QUALITY_WECHAT) {
       this.fps = this.randomFrom([8, 10]);
     } else if (this.quality === AppConstants.QUALITY_ULTRA) {
-      this.outputWidth = 720;
       this.fps = this.randomFrom([16, 20]);
     } else {
-      this.outputWidth = 480;
       this.fps = this.randomFrom([10, 12, 15]);
     }
     this.seconds = this.randomFrom([3, 5, 8, 10, 15, 30]);
@@ -70,13 +74,7 @@ struct LabPage {
   }
 
   private qualityLabel(): string {
-    if (this.quality === AppConstants.QUALITY_WECHAT) {
-      return '微信';
-    }
-    if (this.quality === AppConstants.QUALITY_ULTRA) {
-      return '超高';
-    }
-    return '均衡';
+    return OutputPresetService.resolve(this.quality).shortLabel;
   }
 
   private fortuneIndex(): number {

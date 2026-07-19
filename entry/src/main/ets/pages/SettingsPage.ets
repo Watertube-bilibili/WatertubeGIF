@@ -7,6 +7,7 @@ import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 import { AppSettings, AppStateService } from '../services/AppStateService';
 import { CapabilityResult, LongTaskService } from '../services/LongTaskService';
 import { MaterialCapability, MaterialService } from '../services/MaterialService';
+import { OutputPreset, OutputPresetService } from '../common/OutputPresets';
 
 @Entry
 @Component
@@ -94,17 +95,10 @@ struct SettingsPage {
   }
 
   private chooseQuality(value: number): void {
-    this.defaultQuality = value;
-    if (value === AppConstants.QUALITY_ULTRA) {
-      this.defaultWidth = 720;
-      this.defaultFps = 20;
-    } else if (value === AppConstants.QUALITY_WECHAT) {
-      this.defaultWidth = 320;
-      this.defaultFps = 8;
-    } else {
-      this.defaultWidth = AppConstants.DEFAULT_WIDTH;
-      this.defaultFps = AppConstants.DEFAULT_FPS;
-    }
+    let preset: OutputPreset = OutputPresetService.resolve(value);
+    this.defaultQuality = preset.quality;
+    this.defaultWidth = preset.width;
+    this.defaultFps = preset.fps;
     this.save();
   }
 
@@ -333,6 +327,8 @@ struct SettingsPage {
 
             this.sectionTitle('默认质量')
             Row({ space: 4 }) {
+              this.choice('省流', this.defaultQuality === AppConstants.QUALITY_ECONOMY,
+                () => { this.chooseQuality(AppConstants.QUALITY_ECONOMY); })
               this.choice('微信', this.defaultQuality === AppConstants.QUALITY_WECHAT,
                 () => { this.chooseQuality(AppConstants.QUALITY_WECHAT); })
               this.choice('均衡', this.defaultQuality === AppConstants.QUALITY_MEDIUM,
@@ -348,7 +344,8 @@ struct SettingsPage {
 
             this.sectionTitle('默认宽度')
             Row({ space: 4 }) {
-              this.choice('320 px', this.defaultWidth === 320, () => { this.chooseWidth(320); })
+              this.choice('240 px', this.defaultWidth === 240, () => { this.chooseWidth(240); })
+              this.choice('360 px', this.defaultWidth === 360, () => { this.chooseWidth(360); })
               this.choice('480 px', this.defaultWidth === 480, () => { this.chooseWidth(480); })
               this.choice('720 px', this.defaultWidth === 720, () => { this.chooseWidth(720); })
             }
@@ -363,7 +360,8 @@ struct SettingsPage {
 
             this.sectionTitle('默认帧率')
             Row({ space: 4 }) {
-              this.choice('8 fps', this.defaultFps === 8, () => { this.chooseFps(8); })
+              this.choice('6 fps', this.defaultFps === 6, () => { this.chooseFps(6); })
+              this.choice('10 fps', this.defaultFps === 10, () => { this.chooseFps(10); })
               this.choice('12 fps', this.defaultFps === 12, () => { this.chooseFps(12); })
               this.choice('20 fps', this.defaultFps === 20, () => { this.chooseFps(20); })
             }

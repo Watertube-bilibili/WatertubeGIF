@@ -44,5 +44,32 @@ export default function localUnitTest() {
       expect(plan.estimatedLowBytes > 0).assertTrue();
       expect(plan.estimatedHighBytes > plan.estimatedLowBytes).assertTrue();
     });
+
+    it('caps economy preset for small sharing files', 0, () => {
+      let metadata: VideoMetadata = new VideoMetadata();
+      metadata.width = 3840;
+      metadata.height = 2160;
+      metadata.durationSeconds = 60;
+      let options: GifPlanOptions = new GifPlanOptions();
+      options.width = 960;
+      options.fps = 30;
+      options.quality = AppConstants.QUALITY_ECONOMY;
+      let plan: GifPlan = GifPlanningService.createPlan(options, metadata);
+
+      expect(plan.width).assertEqual(280);
+      expect(plan.fps).assertEqual(8);
+    });
+
+    it('uses economy recommendations for very long video', 0, () => {
+      let metadata: VideoMetadata = new VideoMetadata();
+      metadata.width = 1920;
+      metadata.height = 1080;
+      metadata.durationSeconds = 3600;
+      let recommendation: GifPlanOptions = GifPlanningService.recommend(metadata, 0);
+
+      expect(recommendation.quality).assertEqual(AppConstants.QUALITY_ECONOMY);
+      expect(recommendation.width <= 280).assertTrue();
+      expect(recommendation.fps).assertEqual(3);
+    });
   });
 }

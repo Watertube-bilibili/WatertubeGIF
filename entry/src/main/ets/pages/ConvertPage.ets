@@ -7,6 +7,7 @@ import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 import { GifPlan, GifPlanningService, GifPlanOptions } from '../services/GifPlanningService';
 import { MediaService } from '../services/MediaService';
 import { VideoMetadata } from '../common/MediaModels';
+import { OutputPreset, OutputPresetService } from '../common/OutputPresets';
 
 class PreviewParams {
   outputPath: string = '';
@@ -85,13 +86,7 @@ struct ConvertPage {
   }
 
   private qualityLabel(): string {
-    if (this.quality === AppConstants.QUALITY_ULTRA) {
-      return '超高质量';
-    }
-    if (this.quality === AppConstants.QUALITY_WECHAT) {
-      return '微信质量';
-    }
-    return '中等质量';
+    return OutputPresetService.resolve(this.quality).label;
   }
 
   private async loadVideoMetadata(): Promise<void> {
@@ -199,19 +194,10 @@ struct ConvertPage {
   }
 
   private applyQualityPreset(quality: number): void {
-    this.quality = quality;
-    if (quality === AppConstants.QUALITY_ULTRA) {
-      this.outputWidth = 720;
-      this.fps = 20;
-      return;
-    }
-    if (quality === AppConstants.QUALITY_WECHAT) {
-      this.outputWidth = 320;
-      this.fps = 8;
-      return;
-    }
-    this.outputWidth = AppConstants.DEFAULT_WIDTH;
-    this.fps = AppConstants.DEFAULT_FPS;
+    let preset: OutputPreset = OutputPresetService.resolve(quality);
+    this.quality = preset.quality;
+    this.outputWidth = preset.width;
+    this.fps = preset.fps;
   }
 
   private async run(): Promise<void> {
@@ -281,12 +267,13 @@ struct ConvertPage {
         .fontSize(10)
         .fontColor(this.quality === quality ? 'rgba(255,255,255,0.78)' : Theme.textSecondary(this.colorMode === 0))
         .textAlign(TextAlign.Center)
+        .maxLines(1)
         .margin({ top: 4 })
     }
     .layoutWeight(1)
-    .height(74)
-    .padding({ left: 6, right: 6 })
-    .borderRadius(18)
+    .height(78)
+    .padding({ left: 4, right: 4 })
+    .borderRadius(8)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .linearGradient(this.quality === quality ? {
@@ -320,11 +307,68 @@ struct ConvertPage {
       .width('100%')
 
       Row({ space: 8 }) {
-        this.qualityOption('超高', '低色差', AppConstants.QUALITY_ULTRA)
-        this.qualityOption('中等', '均衡', AppConstants.QUALITY_MEDIUM)
-        this.qualityOption('微信', '小体积', AppConstants.QUALITY_WECHAT)
+        this.qualityOption('省流', '240px · 6fps', AppConstants.QUALITY_ECONOMY)
+        this.qualityOption('微信', '360px · 10fps', AppConstants.QUALITY_WECHAT)
+        this.qualityOption('均衡', '480px · 12fps', AppConstants.QUALITY_MEDIUM)
+        this.qualityOption('超高', '720px · 20fps', AppConstants.QUALITY_ULTRA)
       }
       .width('100%')
+      .margin({ top: 12 })
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(20)
+    .backgroundColor(Theme.panelBg(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+  }
+
+  @Builder
+  private durationChoice(label: string, seconds: number) {
+    Button(label)
+      .layoutWeight(1)
+      .height(38)
+      .fontSize(12)
+      .fontWeight(this.seconds === seconds ? 750 : 500)
+      .fontColor(this.seconds === seconds ? Color.White : Theme.textPrimary(this.colorMode === 0))
+      .borderRadius(6)
+      .backgroundColor(this.seconds === seconds ? Theme.accent() : Color.Transparent)
+      .onClick(() => { this.seconds = seconds; })
+  }
+
+  @Builder
+  private durationBlock() {
+    Column() {
+      Row() {
+        Text('截取时长')
+          .fontSize(15)
+          .fontWeight(800)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+        Blank()
+        Text(this.durationLabel())
+          .fontSize(13)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+      }
+      .width('100%')
+
+      Slider({ value: this.seconds, min: 0, max: AppConstants.MAX_DURATION_SECONDS, step: 5,
+        style: SliderStyle.OutSet })
+        .blockColor(Color.White)
+        .trackColor('rgba(120,140,170,0.22)')
+        .selectedColor(Theme.accent())
+        .showTips(true)
+        .onChange((value: number) => { this.seconds = Math.round(value); })
+        .margin({ top: 10 })
+
+      Row({ space: 4 }) {
+        this.durationChoice('5 秒', 5)
+        this.durationChoice('10 秒', 10)
+        this.durationChoice('30 秒', 30)
+        this.durationChoice('完整', 0)
+      }
+      .width('100%')
+      .padding(3)
+      .borderRadius(8)
+      .backgroundColor(this.colorMode === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(20,40,80,0.05)')
       .margin({ top: 12 })
     }
     .width('100%')
@@ -522,10 +566,7 @@ struct ConvertPage {
         this.sliderBlock('帧率', this.fps + ' fps', 1, 30, 1, this.fps, (value: number) => {
           this.fps = Math.max(1, value);
         })
-        this.sliderBlock('截取时长', this.durationLabel(), 0, AppConstants.MAX_DURATION_SECONDS, 5, this.seconds,
-          (value: number) => {
-            this.seconds = value;
-          })
+        this.durationBlock()
 
         this.switchRow('智能尺寸', '识别横竖屏，所选数值作为画面最长边', this.smartSizeEnabled,
           (checked: boolean) => {
