@@ -1,10 +1,14 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
+
+const DOMAIN: number = 0xFF01;
+const TAG: string = 'HomePage';
 
 class ConvertParams {
   sourceUri: string = '';
@@ -31,29 +35,50 @@ struct Index {
   @State listOpacity: number = 0;
   @State listTranslateY: number = 20;
 
-  private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private settings: AppSettings = new AppSettings();
-
-  aboutToAppear(): void {
-    this.refreshHome(true);
-  }
+  private firstPageShow: boolean = true;
+  private refreshRunning: boolean = false;
 
   onPageShow(): void {
-    this.refreshHome(false);
+    let checkSupportDialog: boolean = this.firstPageShow;
+    this.firstPageShow = false;
+    this.refreshHome(checkSupportDialog);
   }
 
   private async refreshHome(checkSupportDialog: boolean): Promise<void> {
-    this.history = await AppStateService.loadHistory(this.ctx);
-    this.settings = await AppStateService.loadSettings(this.ctx);
-    if (checkSupportDialog) {
-      this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
+    if (this.refreshRunning) {
+      return;
     }
-    
-    // Staggered appearance animation
-    animateTo({ duration: 800, curve: Curve.FastOutSlowIn }, () => {
+    this.refreshRunning = true;
+    try {
+      let ctx: common.UIAbilityContext = this.abilityContext();
+      this.history = await AppStateService.loadHistory(ctx);
+      this.settings = await AppStateService.loadSettings(ctx);
+      if (checkSupportDialog) {
+        this.showSupportDialog = await AppStateService.shouldShowSupportDialog(ctx);
+      }
+    } catch (e) {
+      this.history = [];
+      this.settings = new AppSettings();
+      this.showSupportDialog = false;
+      hilog.error(DOMAIN, TAG, 'Home state initialization failed; defaults were restored');
+    } finally {
+      this.refreshRunning = false;
+    }
+
+    try {
+      animateTo({ duration: 800, curve: Curve.FastOutSlowIn }, () => {
+        this.listOpacity = 1;
+        this.listTranslateY = 0;
+      });
+    } catch (e) {
       this.listOpacity = 1;
       this.listTranslateY = 0;
-    })
+    }
+  }
+
+  private abilityContext(): common.UIAbilityContext {
+    return getContext(this) as common.UIAbilityContext;
   }
 
   private async startConvert(): Promise<void> {
@@ -88,8 +113,12 @@ struct Index {
   }
 
   private async closeSupportDialog(): Promise<void> {
-    if (this.skipSupportSevenDays) {
-      await AppStateService.hideSupportForSevenDays(this.ctx);
+    try {
+      if (this.skipSupportSevenDays) {
+        await AppStateService.hideSupportForSevenDays(this.abilityContext());
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'Unable to persist the support reminder preference');
     }
     this.showSupportDialog = false;
   }
@@ -97,7 +126,7 @@ struct Index {
   private async supportNow(): Promise<void> {
     await this.closeSupportDialog();
     try {
-      this.ctx.openLink('https://ifdian.net/a/watertube');
+      this.abilityContext().openLink('https://ifdian.net/a/watertube');
     } catch (e) {
       promptAction.showToast({ message: '打开链接失败', duration: 1800 });
     }
@@ -126,9 +155,13 @@ struct Index {
   }
 
   private async clearHistory(): Promise<void> {
-    await AppStateService.clearHistory(this.ctx);
-    this.history = [];
-    promptAction.showToast({ message: '历史记录已清空', duration: 1400 });
+    try {
+      await AppStateService.clearHistory(this.abilityContext());
+      this.history = [];
+      promptAction.showToast({ message: '历史记录已清空', duration: 1400 });
+    } catch (e) {
+      promptAction.showToast({ message: '清空失败，请稍后重试', duration: 1800 });
+    }
   }
 
   private formatTime(value: number): string {

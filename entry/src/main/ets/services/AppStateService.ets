@@ -1,24 +1,15 @@
 import { common } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { AppConstants } from '../common/Constants';
+import { HistoryCodec, HistoryItem } from './HistoryCodec';
+
+export { HistoryItem } from './HistoryCodec';
 
 const STORE_NAME: string = 'watertube_state';
 const KEY_SUPPORT_UNTIL: string = 'support_until';
 const KEY_HISTORY: string = 'history';
 const KEY_SETTINGS: string = 'settings';
 const WEEK_MS: number = 7 * 24 * 60 * 60 * 1000;
-
-export class HistoryItem {
-  id: string = '';
-  title: string = '';
-  path: string = '';
-  width: number = 0;
-  height: number = 0;
-  frames: number = 0;
-  size: number = 0;
-  createdAt: number = 0;
-  protectedName: boolean = false;
-}
 
 export class AppSettings {
   defaultQuality: number = AppConstants.DEFAULT_QUALITY;
@@ -57,8 +48,7 @@ export class AppStateService {
     try {
       let store: preferences.Preferences = await AppStateService.store(ctx);
       let raw: string = await store.get(KEY_HISTORY, '[]') as string;
-      let parsed: HistoryItem[] = JSON.parse(raw) as HistoryItem[];
-      return parsed.slice(0, 20);
+      return HistoryCodec.decode(raw);
     } catch (e) {
       return [];
     }
@@ -111,18 +101,21 @@ export class AppStateService {
       let store: preferences.Preferences = await AppStateService.store(ctx);
       let raw: string = await store.get(KEY_SETTINGS, '{}') as string;
       let saved: Record<string, Object> = JSON.parse(raw) as Record<string, Object>;
-      settings.defaultQuality = Number(saved['defaultQuality'] ?? settings.defaultQuality);
-      settings.defaultWidth = Number(saved['defaultWidth'] ?? settings.defaultWidth);
-      settings.defaultFps = Number(saved['defaultFps'] ?? settings.defaultFps);
-      settings.backgroundEnabled = (saved['backgroundEnabled'] as boolean) ?? settings.backgroundEnabled;
-      settings.liveViewEnabled = (saved['liveViewEnabled'] as boolean) ?? settings.liveViewEnabled;
+      settings.defaultQuality = AppStateService.boundedInteger(saved['defaultQuality'],
+        settings.defaultQuality, AppConstants.QUALITY_WECHAT, AppConstants.QUALITY_ECONOMY);
+      settings.defaultWidth = AppStateService.boundedInteger(saved['defaultWidth'],
+        settings.defaultWidth, 120, 1080);
+      settings.defaultFps = AppStateService.boundedInteger(saved['defaultFps'], settings.defaultFps, 1, 30);
+      settings.backgroundEnabled = AppStateService.booleanValue(saved['backgroundEnabled'],
+        settings.backgroundEnabled);
+      settings.liveViewEnabled = AppStateService.booleanValue(saved['liveViewEnabled'], settings.liveViewEnabled);
       let lightSensePreferenceVersion: number = Number(saved['lightSensePreferenceVersion'] ?? 0);
       if (lightSensePreferenceVersion >= 2) {
-        settings.lightSenseEnabled = (saved['lightSenseEnabled'] as boolean) ?? settings.lightSenseEnabled;
+        settings.lightSenseEnabled = AppStateService.booleanValue(saved['lightSenseEnabled'], false);
       }
       settings.lightSensePreferenceVersion = 2;
-      settings.stealthNames = (saved['stealthNames'] as boolean) ?? settings.stealthNames;
-      settings.smartSizeEnabled = (saved['smartSizeEnabled'] as boolean) ?? settings.smartSizeEnabled;
+      settings.stealthNames = AppStateService.booleanValue(saved['stealthNames'], settings.stealthNames);
+      settings.smartSizeEnabled = AppStateService.booleanValue(saved['smartSizeEnabled'], settings.smartSizeEnabled);
     } catch (e) {
     }
     return settings;
@@ -132,5 +125,17 @@ export class AppStateService {
     let store: preferences.Preferences = await AppStateService.store(ctx);
     await store.put(KEY_SETTINGS, JSON.stringify(settings));
     await store.flush();
+  }
+
+  private static boundedInteger(value: Object | undefined, fallback: number, min: number, max: number): number {
+    let parsed: number = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.min(max, Math.max(min, Math.round(parsed)));
+  }
+
+  private static booleanValue(value: Object | undefined, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
   }
 }

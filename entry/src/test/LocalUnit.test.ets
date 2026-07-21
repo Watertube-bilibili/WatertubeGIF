@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { AppConstants } from '../main/ets/common/Constants';
 import { VideoMetadata } from '../main/ets/common/MediaModels';
 import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/services/GifPlanningService';
+import { HistoryCodec, HistoryItem } from '../main/ets/services/HistoryCodec';
 
 export default function localUnitTest() {
   describe('GifPlanningService', () => {
@@ -70,6 +71,40 @@ export default function localUnitTest() {
       expect(recommendation.quality).assertEqual(AppConstants.QUALITY_ECONOMY);
       expect(recommendation.width <= 280).assertTrue();
       expect(recommendation.fps).assertEqual(3);
+    });
+  });
+
+  describe('HistoryCodec', () => {
+    it('recovers a legacy item with missing display fields', 0, () => {
+      let history: HistoryItem[] = HistoryCodec.decode(
+        '[{"path":"/data/app/result.gif","width":"480","height":270}]');
+
+      expect(history.length).assertEqual(1);
+      expect(history[0].title).assertEqual('未命名动图');
+      expect(history[0].width).assertEqual(480);
+      expect(history[0].height).assertEqual(270);
+      expect(history[0].id.length > 0).assertTrue();
+    });
+
+    it('drops unusable records instead of crashing the home page', 0, () => {
+      let history: HistoryItem[] = HistoryCodec.decode('[null,{"title":"没有路径"}]');
+      expect(history.length).assertEqual(0);
+    });
+
+    it('keeps persisted identifiers stable and unique', 0, () => {
+      let history: HistoryItem[] = HistoryCodec.decode(
+        '[{"id":"saved","path":"/data/a.gif"},{"id":"saved","path":"/data/b.gif"}]');
+      let reloaded: HistoryItem[] = HistoryCodec.decode(JSON.stringify(history));
+
+      expect(history[0].id).assertEqual('saved');
+      expect(history[1].id === history[0].id).assertFalse();
+      expect(reloaded[0].id).assertEqual(history[0].id);
+      expect(reloaded[1].id).assertEqual(history[1].id);
+    });
+
+    it('returns an empty list for malformed persisted data', 0, () => {
+      let history: HistoryItem[] = HistoryCodec.decode('{broken json');
+      expect(history.length).assertEqual(0);
     });
   });
 }
