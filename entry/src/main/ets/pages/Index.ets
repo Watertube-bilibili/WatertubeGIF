@@ -1,11 +1,9 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
-import { HdsNavigation, HdsNavigationTitleMode, TitleBarStyleOptions } from '@kit.UIDesignKit';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MediaService, PickedMedia } from '../services/MediaService';
-import { MaterialCapability, MaterialService } from '../services/MaterialService';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
 
 class ConvertParams {
@@ -32,8 +30,6 @@ struct Index {
   @State isPicking: boolean = false;
   @State listOpacity: number = 0;
   @State listTranslateY: number = 20;
-  @State lightSenseEnabled: boolean = true;
-  @State materialCapability: MaterialCapability = new MaterialCapability();
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private settings: AppSettings = new AppSettings();
@@ -49,8 +45,6 @@ struct Index {
   private async refreshHome(checkSupportDialog: boolean): Promise<void> {
     this.history = await AppStateService.loadHistory(this.ctx);
     this.settings = await AppStateService.loadSettings(this.ctx);
-    this.lightSenseEnabled = this.settings.lightSenseEnabled;
-    this.materialCapability = MaterialService.checkCapability();
     if (checkSupportDialog) {
       this.showSupportDialog = await AppStateService.shouldShowSupportDialog(this.ctx);
     }
@@ -144,10 +138,6 @@ struct Index {
       date.getMinutes().toString().padStart(2, '0');
   }
 
-  private titleBarStyle(): TitleBarStyleOptions {
-    return MaterialService.titleBarStyle(this.lightSenseEnabled, this.materialCapability);
-  }
-
   @Builder
   private homeTitleBar() {
     Row() {
@@ -212,7 +202,7 @@ struct Index {
   }
 
   build() {
-    HdsNavigation() {
+    Navigation() {
       Stack() {
         Column()
           .width('100%')
@@ -228,6 +218,8 @@ struct Index {
 
         Scroll() {
           Column() {
+            this.homeTitleBar()
+
             Column() {
               Row() {
                 Text('最近记录')
@@ -504,15 +496,7 @@ struct Index {
       .width('100%')
       .height('100%')
     }
-    .titleBar({
-      style: this.titleBarStyle(),
-      content: {
-        stackBuilder: this.homeTitleBar
-      },
-      enableComponentSafeArea: true
-    })
-    .titleMode(HdsNavigationTitleMode.FULL)
-    .hideTitleBar(false)
+    .hideTitleBar(true)
     .mode(NavigationMode.Stack)
     .backgroundColor(Theme.pageBg(this.colorMode === 0))
   }
