@@ -4,6 +4,7 @@ export class HistoryItem {
   path: string = '';
   width: number = 0;
   height: number = 0;
+  fps: number = 0;
   frames: number = 0;
   size: number = 0;
   createdAt: number = 0;
@@ -42,6 +43,7 @@ export class HistoryCodec {
           item.path = path;
           item.width = HistoryCodec.nonNegativeInteger(saved['width']);
           item.height = HistoryCodec.nonNegativeInteger(saved['height']);
+          item.fps = HistoryCodec.nonNegativeInteger(saved['fps']);
           item.frames = HistoryCodec.nonNegativeInteger(saved['frames']);
           item.size = HistoryCodec.nonNegativeInteger(saved['size']);
           item.createdAt = HistoryCodec.nonNegativeInteger(saved['createdAt']);

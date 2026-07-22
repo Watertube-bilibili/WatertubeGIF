@@ -22,6 +22,8 @@ export class GifResult {
   path: string = '';
   width: number = 0;
   height: number = 0;
+  fps: number = 0;
+  durationSeconds: number = 0;
   frames: number = 0;
   size: number = 0;
 }
@@ -159,6 +161,9 @@ export class GifEncoder {
         await longTaskService.updateLiveViewProgress(overallProgress,
           '正在生成 GIF ' + encodingProgress.toString() + '%');
       });
+      if (this.cancelled) {
+        throw new Error('cancelled');
+      }
       if (code !== 0) {
         throw new Error('ffmpeg failed: ' + code.toString());
       }
@@ -170,6 +175,8 @@ export class GifEncoder {
       result.path = outputPath;
       result.width = outW;
       result.height = outH;
+      result.fps = outputFps;
+      result.durationSeconds = clipSeconds;
       result.frames = plan.frames;
       result.size = outputStat.size;
       succeeded = true;

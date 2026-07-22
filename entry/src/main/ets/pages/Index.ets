@@ -13,6 +13,7 @@ import {
   hdsMaterial
 } from '@kit.UIDesignKit';
 import { AppConstants } from '../common/Constants';
+import { BatchSource, BatchSourceCodec } from '../common/BatchModels';
 import { Theme } from '../common/Theme';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
 import { MaterialCapability, MaterialService } from '../services/MaterialService';
@@ -35,6 +36,9 @@ class ConvertParams {
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
   smartSizeEnabled: boolean = true;
+  batchMode: boolean = false;
+  batchPayload: string = '';
+  protectedNames: boolean = false;
 }
 
 @Entry
@@ -46,6 +50,7 @@ struct Index {
   @State history: HistoryItem[] = [];
   @State skipSupportSevenDays: boolean = false;
   @State isPicking: boolean = false;
+  @State showConvertActions: boolean = false;
   @State materialCapability: MaterialCapability = new MaterialCapability();
 
   private settings: AppSettings = new AppSettings();
@@ -146,29 +151,82 @@ struct Index {
     }
   }
 
-  private async startConvert(): Promise<void> {
+  private createConvertParams(): ConvertParams {
+    let params: ConvertParams = new ConvertParams();
+    params.width = this.settings.defaultWidth;
+    params.fps = this.settings.defaultFps;
+    params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
+    params.quality = this.settings.defaultQuality;
+    params.backgroundEnabled = this.settings.backgroundEnabled;
+    params.liveViewEnabled = this.settings.liveViewEnabled;
+    params.smartSizeEnabled = this.settings.smartSizeEnabled;
+    params.protectedNames = this.settings.stealthNames;
+    return params;
+  }
+
+  private closeConvertActions(): void {
+    animateTo({ duration: 180 }, () => {
+      this.showConvertActions = false;
+    });
+  }
+
+  private toggleConvertActions(): void {
     if (this.isPicking) {
       return;
     }
+    animateTo({ duration: 220 }, () => {
+      this.showConvertActions = !this.showConvertActions;
+    });
+  }
+
+  private async startSingleConvert(): Promise<void> {
+    if (this.isPicking) {
+      return;
+    }
+    this.showConvertActions = false;
     this.isPicking = true;
     try {
       let media: PickedMedia = await MediaService.pickVideo();
       if (media.uri.length === 0) {
         return;
       }
-      let params: ConvertParams = new ConvertParams();
+      let params: ConvertParams = this.createConvertParams();
       params.sourceUri = media.uri;
       params.sourceName = this.settings.stealthNames ? '未命名素材' : media.name;
-      params.width = this.settings.defaultWidth;
-      params.fps = this.settings.defaultFps;
-      params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
-      params.quality = this.settings.defaultQuality;
-      params.backgroundEnabled = this.settings.backgroundEnabled;
-      params.liveViewEnabled = this.settings.liveViewEnabled;
-      params.smartSizeEnabled = this.settings.smartSizeEnabled;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {
       promptAction.showToast({ message: '选择视频失败', duration: 1800 });
+    } finally {
+      this.isPicking = false;
+    }
+  }
+
+  private async startBatchConvert(): Promise<void> {
+    if (this.isPicking) {
+      return;
+    }
+    this.showConvertActions = false;
+    this.isPicking = true;
+    try {
+      let selected: PickedMedia[] = await MediaService.pickVideos(AppConstants.MAX_BATCH_ITEMS);
+      if (selected.length === 0) {
+        return;
+      }
+      let sources: BatchSource[] = [];
+      for (let media of selected) {
+        let source: BatchSource = new BatchSource();
+        source.uri = media.uri;
+        source.name = media.name;
+        sources.push(source);
+      }
+      let params: ConvertParams = this.createConvertParams();
+      params.batchMode = true;
+      params.batchPayload = BatchSourceCodec.encode(sources);
+      params.sourceUri = sources[0].uri;
+      params.sourceName = this.settings.stealthNames ? '批量素材' : sources[0].name;
+      router.pushUrl({ url: 'pages/ConvertPage', params: params });
+    } catch (e) {
+      promptAction.showToast({ message: '批量选择视频失败', duration: 1800 });
     } finally {
       this.isPicking = false;
     }
@@ -201,6 +259,7 @@ struct Index {
         outputPath: item.path,
         width: item.width,
         height: item.height,
+        fps: item.fps,
         frames: item.frames,
         size: item.size,
         sourceName: item.title
@@ -246,7 +305,16 @@ struct Index {
       date.getMinutes().toString().padStart(2, '0');
   }
 
+  private historyDetail(item: HistoryItem): string {
+    let detail: string = item.width.toString() + ' × ' + item.height.toString();
+    if (item.fps > 0) {
+      detail += ' · ' + item.fps.toString() + ' fps';
+    }
+    return detail + ' · ' + MediaService.formatBytes(item.size) + ' · ' + this.formatTime(item.createdAt);
+  }
+
   private switchTab(index: number): void {
+    this.showConvertActions = false;
     this.selectedTab = index;
     this.tabsController.changeIndex(index);
   }
@@ -342,7 +410,7 @@ struct Index {
         .fontSize(18)
         .fontWeight(700)
         .fontColor(Theme.textPrimary(this.colorMode === 0))
-      Text('点击右下角按钮，选择一个视频开始转换')
+      Text('点击右下角加号，选择单个或批量转换')
         .fontSize(13)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .textAlign(TextAlign.Center)
@@ -388,8 +456,7 @@ struct Index {
           }
         }
         .width('100%')
-        Text(item.width.toString() + ' × ' + item.height.toString() + ' · ' + MediaService.formatBytes(item.size) +
-          ' · ' + this.formatTime(item.createdAt))
+        Text(this.historyDetail(item))
           .fontSize(12)
           .fontColor(Theme.textSecondary(this.colorMode === 0))
           .maxLines(1)
@@ -441,38 +508,78 @@ struct Index {
       .width('100%')
       .height('100%')
 
-      Button({ type: ButtonType.Capsule, stateEffect: true }) {
-        Row({ space: 8 }) {
-          if (this.isPicking) {
-            LoadingProgress()
-              .width(22)
-              .height(22)
-              .color(Color.White)
-            Text('正在读取')
-              .fontSize(15)
-              .fontWeight(650)
-              .fontColor(Color.White)
-          } else {
-            SymbolGlyph($r('sys.symbol.plus'))
-              .fontSize(24)
-              .fontColor([Color.White])
-            if (this.history.length === 0) {
-              Text('立即转换')
+      if (this.showConvertActions) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.colorMode === 0 ? 'rgba(0,0,0,0.26)' : 'rgba(20,40,70,0.10)')
+          .onClick(() => { this.closeConvertActions(); })
+
+        Column({ space: 10 }) {
+          Button({ type: ButtonType.Capsule, stateEffect: true }) {
+            Row({ space: 10 }) {
+              SymbolGlyph($r('sys.symbol.movie'))
+                .fontSize(21)
+                .fontColor([Theme.accent()])
+              Text('单个转换')
                 .fontSize(15)
-                .fontWeight(650)
-                .fontColor(Color.White)
+                .fontWeight(700)
+                .fontColor(Theme.textPrimary(this.colorMode === 0))
             }
           }
+          .width(154)
+          .height(50)
+          .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+          .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
+          .accessibilityText('选择一个视频转换')
+          .onClick(() => { this.startSingleConvert(); })
+
+          Button({ type: ButtonType.Capsule, stateEffect: true }) {
+            Row({ space: 10 }) {
+              SymbolGlyph($r('sys.symbol.circle_grid_2x2'))
+                .fontSize(21)
+                .fontColor([Theme.cyan()])
+              Text('批量转换')
+                .fontSize(15)
+                .fontWeight(700)
+                .fontColor(Theme.textPrimary(this.colorMode === 0))
+            }
+          }
+          .width(154)
+          .height(50)
+          .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+          .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
+          .accessibilityText('选择多个视频批量转换')
+          .onClick(() => { this.startBatchConvert(); })
+        }
+        .position({ right: 22, bottom: 174 })
+        .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 18 })))
+      }
+
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        if (this.isPicking) {
+          LoadingProgress()
+            .width(24)
+            .height(24)
+            .color(Color.White)
+        } else {
+          SymbolGlyph($r('sys.symbol.plus'))
+            .fontSize(26)
+            .fontColor([Color.White])
+            .rotate({ angle: this.showConvertActions ? 45 : 0 })
+            .animation({ duration: 220 })
         }
       }
-      .width(this.isPicking || this.history.length === 0 ? 142 : 58)
+      .width(58)
       .height(58)
       .backgroundColor(Theme.accent())
       .shadow({ radius: 16, color: 'rgba(47,125,255,0.32)', offsetX: 0, offsetY: 8 })
       .position({ right: 22, bottom: 106 })
-      .accessibilityText('开始转换')
+      .accessibilityText(this.showConvertActions ? '收起转换菜单' : '打开转换菜单')
       .enabled(!this.isPicking)
-      .onClick(() => { this.startConvert(); })
+      .onClick(() => { this.toggleConvertActions(); })
     }
     .width('100%')
     .height('100%')
@@ -531,6 +638,7 @@ struct Index {
       .barFloatingStyle(this.floatingBarStyle())
       .divider({ mode: DividerMode.NONE })
       .onChange((index: number) => {
+        this.showConvertActions = false;
         this.selectedTab = index;
         if (index === 0) {
           this.refreshHome(false);

@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { AppConstants } from '../common/Constants';
+import { BatchSource, BatchSourceCodec } from '../common/BatchModels';
 import { Theme } from '../common/Theme';
 import { GifEncoder, GifResult, GifSettings } from '../services/GifEncoder';
 import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
@@ -8,12 +9,24 @@ import { GifPlan, GifPlanningService, GifPlanOptions } from '../services/GifPlan
 import { MediaService } from '../services/MediaService';
 import { VideoMetadata } from '../common/MediaModels';
 import { OutputPreset, OutputPresetService } from '../common/OutputPresets';
+import { AppStateService, HistoryItem } from '../services/AppStateService';
 
 class PreviewParams {
   outputPath: string = '';
   sourceName: string = '';
   width: number = 0;
   height: number = 0;
+  fps: number = 0;
+  frames: number = 0;
+  size: number = 0;
+}
+
+class BatchOutput {
+  path: string = '';
+  name: string = '';
+  width: number = 0;
+  height: number = 0;
+  fps: number = 0;
   frames: number = 0;
   size: number = 0;
 }
@@ -39,10 +52,22 @@ struct ConvertPage {
   @State metadataReady: boolean = false;
   @State metadataLoading: boolean = true;
   @State metadataStatus: string = '正在读取视频信息';
+  @State batchMode: boolean = false;
+  @State batchComplete: boolean = false;
+  @State batchCurrent: number = 0;
+  @State batchSucceeded: number = 0;
+  @State batchFailed: number = 0;
+  @State batchOutputs: BatchOutput[] = [];
+  @State activeSourceName: string = '';
+  @State stopRequested: boolean = false;
+  @State isBatchSaving: boolean = false;
+  @State batchSaveProgress: number = 0;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
   private encoder: GifEncoder = new GifEncoder();
   private videoMetadata: VideoMetadata = new VideoMetadata();
+  private batchSources: BatchSource[] = [];
+  private protectedNames: boolean = false;
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, Object>;
@@ -58,14 +83,35 @@ struct ConvertPage {
       this.backgroundEnabled = (params['backgroundEnabled'] as boolean) ?? true;
       this.liveViewEnabled = (params['liveViewEnabled'] as boolean) ?? true;
       this.smartSizeEnabled = (params['smartSizeEnabled'] as boolean) ?? true;
+      this.batchMode = (params['batchMode'] as boolean) ?? false;
+      this.protectedNames = (params['protectedNames'] as boolean) ?? false;
+      if (this.batchMode) {
+        this.batchSources = BatchSourceCodec.decode((params['batchPayload'] as string) ?? '');
+        if (this.batchSources.length > 0) {
+          this.sourceUri = this.batchSources[0].uri;
+          this.sourceName = this.displaySourceName(this.batchSources[0].name);
+        }
+      }
     }
     this.loadVideoMetadata();
   }
 
   aboutToDisappear(): void {
     if (this.isConverting) {
+      this.stopRequested = true;
       this.encoder.cancel();
     }
+  }
+
+  private displaySourceName(name: string): string {
+    if (this.protectedNames) {
+      return '未命名素材';
+    }
+    return name.length > 0 ? name : '视频';
+  }
+
+  private batchCount(): number {
+    return this.batchSources.length;
   }
 
   private durationLabel(): string {
@@ -200,23 +246,7 @@ struct ConvertPage {
     this.fps = preset.fps;
   }
 
-  private async run(): Promise<void> {
-    if (this.sourceUri.length === 0) {
-      promptAction.showToast({ message: '没有可转换的视频', duration: 1800 });
-      router.back();
-      return;
-    }
-    if (this.isConverting) {
-      return;
-    }
-
-    animateTo({ duration: 300 }, () => {
-      this.isConverting = true;
-    })
-    
-    this.progress = 0;
-    this.status = '准备转换';
-
+  private conversionSettings(): GifSettings {
     let settings: GifSettings = new GifSettings();
     settings.width = this.outputWidth;
     settings.fps = this.fps;
@@ -227,7 +257,39 @@ struct ConvertPage {
     settings.backgroundEnabled = this.backgroundEnabled;
     settings.liveViewEnabled = this.liveViewEnabled;
     settings.smartSizeEnabled = this.smartSizeEnabled;
+    return settings;
+  }
 
+  private async run(): Promise<void> {
+    if (this.sourceUri.length === 0 || (this.batchMode && this.batchSources.length === 0)) {
+      promptAction.showToast({ message: '没有可转换的视频', duration: 1800 });
+      router.back();
+      return;
+    }
+    if (this.isConverting) {
+      return;
+    }
+
+    animateTo({ duration: 300 }, () => {
+      this.isConverting = true;
+    });
+
+    this.progress = 0;
+    this.status = '准备转换';
+    this.stopRequested = false;
+    this.batchComplete = false;
+    this.batchCurrent = 0;
+    this.batchSucceeded = 0;
+    this.batchFailed = 0;
+    this.batchOutputs = [];
+    if (this.batchMode) {
+      await this.runBatch(this.conversionSettings());
+    } else {
+      await this.runSingle(this.conversionSettings());
+    }
+  }
+
+  private async runSingle(settings: GifSettings): Promise<void> {
     let result: GifResult = await this.encoder.convertVideo(
       this.sourceUri,
       this.ctx,
@@ -241,8 +303,11 @@ struct ConvertPage {
     if (result.path.length === 0) {
       animateTo({ duration: 300 }, () => {
         this.isConverting = false;
-      })
-      promptAction.showToast({ message: '转换失败：请检查视频格式或稍后重试', duration: 2200 });
+      });
+      promptAction.showToast({
+        message: this.stopRequested ? '已停止转换' : '转换失败：请检查视频格式或稍后重试',
+        duration: 2200
+      });
       return;
     }
 
@@ -251,9 +316,114 @@ struct ConvertPage {
     params.sourceName = this.sourceName;
     params.width = result.width;
     params.height = result.height;
+    params.fps = result.fps;
     params.frames = result.frames;
     params.size = result.size;
+    this.isConverting = false;
     router.replaceUrl({ url: 'pages/PreviewPage', params: params });
+  }
+
+  private async saveBatchHistory(source: BatchSource, result: GifResult, index: number): Promise<void> {
+    let item: HistoryItem = new HistoryItem();
+    item.id = Date.now().toString() + ':' + index.toString();
+    item.title = this.protectedNames ? '未命名素材' : this.displaySourceName(source.name);
+    item.protectedName = this.protectedNames;
+    item.path = result.path;
+    item.width = result.width;
+    item.height = result.height;
+    item.fps = result.fps;
+    item.frames = result.frames;
+    item.size = result.size;
+    item.createdAt = Date.now();
+    try {
+      await AppStateService.addHistory(this.ctx, item);
+    } catch (e) {
+    }
+  }
+
+  private async runBatch(settings: GifSettings): Promise<void> {
+    let completed: number = 0;
+    for (let index: number = 0; index < this.batchSources.length; index++) {
+      if (this.stopRequested) {
+        break;
+      }
+      let source: BatchSource = this.batchSources[index];
+      this.batchCurrent = index + 1;
+      this.activeSourceName = this.displaySourceName(source.name);
+      this.status = '第 ' + this.batchCurrent.toString() + '/' + this.batchCount().toString() + ' 个 · 准备转换';
+      let result: GifResult = await this.encoder.convertVideo(
+        source.uri,
+        this.ctx,
+        settings,
+        (value: number, label: string) => {
+          this.progress = Math.min(100, Math.floor((index * 100 + value) / this.batchCount()));
+          this.status = '第 ' + (index + 1).toString() + '/' + this.batchCount().toString() + ' 个 · ' + label;
+        }
+      );
+      completed++;
+      if (result.path.length > 0) {
+        let output: BatchOutput = new BatchOutput();
+        output.path = result.path;
+        output.name = this.displaySourceName(source.name);
+        output.width = result.width;
+        output.height = result.height;
+        output.fps = result.fps;
+        output.frames = result.frames;
+        output.size = result.size;
+        let outputs: BatchOutput[] = this.batchOutputs.slice();
+        outputs.push(output);
+        this.batchOutputs = outputs;
+        this.batchSucceeded++;
+        await this.saveBatchHistory(source, result, index);
+      } else {
+        this.batchFailed++;
+      }
+    }
+    this.progress = Math.floor(completed * 100 / this.batchCount());
+    this.status = this.stopRequested ? '批量任务已停止' : '批量转换完成';
+    animateTo({ duration: 300 }, () => {
+      this.isConverting = false;
+      this.batchComplete = true;
+    });
+  }
+
+  private requestStop(): void {
+    if (this.stopRequested) {
+      return;
+    }
+    this.stopRequested = true;
+    if (this.batchMode) {
+      this.status = '当前视频完成后停止队列';
+    } else {
+      this.status = '当前编码结束后停止';
+      this.encoder.cancel();
+    }
+  }
+
+  private async saveBatchOutputs(): Promise<void> {
+    if (this.isBatchSaving || this.batchOutputs.length === 0) {
+      return;
+    }
+    let paths: string[] = [];
+    for (let output of this.batchOutputs) {
+      paths.push(output.path);
+    }
+    this.isBatchSaving = true;
+    this.batchSaveProgress = 0;
+    let saved: number = await MediaService.saveGifsToGallery(this.ctx, paths,
+      (completed: number, total: number) => {
+        this.batchSaveProgress = Math.floor(completed * 100 / total);
+      });
+    this.isBatchSaving = false;
+    promptAction.showToast({
+      message: saved === paths.length ? '全部保存到相册' : '已保存 ' + saved.toString() + '/' + paths.length.toString() + ' 个',
+      duration: 2200
+    });
+  }
+
+  private goHome(): void {
+    router.clear();
+    router.pushUrl({ url: 'pages/Index' });
   }
 
   @Builder
@@ -544,12 +714,12 @@ struct ConvertPage {
       }
       .width('100%')
 
-      Text('转换参数')
+      Text(this.batchMode ? '批量转换参数' : '转换参数')
         .fontSize(32)
         .fontWeight(900)
         .fontColor(Theme.textPrimary(this.colorMode === 0))
         .margin({ top: 24 })
-      Text(this.sourceName)
+      Text(this.batchMode ? this.batchCount().toString() + ' 个视频 · 共用以下参数' : this.sourceName)
         .fontSize(14)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .maxLines(1)
@@ -581,7 +751,7 @@ struct ConvertPage {
       }
       .width('100%')
 
-      Button('开始转换')
+      Button(this.batchMode ? '开始批量转换 (' + this.batchCount().toString() + ')' : '开始转换')
         .width('100%')
         .height(58)
         .fontSize(18)
@@ -616,11 +786,11 @@ struct ConvertPage {
   @Builder
   private progressView() {
     Column() {
-      Text('正在生成 GIF')
+      Text(this.batchMode ? '正在批量生成 GIF' : '正在生成 GIF')
         .fontSize(28)
         .fontWeight(900)
         .fontColor(Theme.textPrimary(this.colorMode === 0))
-      Text(this.sourceName)
+      Text(this.batchMode ? this.activeSourceName : this.sourceName)
         .fontSize(14)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .maxLines(1)
@@ -667,7 +837,7 @@ struct ConvertPage {
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .margin({ top: 10 })
 
-      Button('取消')
+      Button(this.stopRequested ? '正在等待停止' : (this.batchMode ? '完成当前视频后停止' : '停止转换'))
         .height(50)
         .padding({ left: 32, right: 32 })
         .fontSize(16)
@@ -677,12 +847,8 @@ struct ConvertPage {
         .border({ width: 1, color: Theme.border(this.colorMode === 0) })
         .borderRadius(25)
         .margin({ top: 48 })
-        .onClick(() => {
-          this.encoder.cancel();
-          animateTo({ duration: 300 }, () => {
-            this.isConverting = false;
-          })
-        })
+        .enabled(!this.stopRequested)
+        .onClick(() => { this.requestStop(); })
     }
     .width('calc(100% - 40px)')
     .padding(32)
@@ -693,6 +859,124 @@ struct ConvertPage {
     .shadow({ radius: 40, color: 'rgba(47,125,255,0.18)', offsetX: 0, offsetY: 20 })
     .alignItems(HorizontalAlign.Center)
     .transition(TransitionEffect.scale({ x: 0.9, y: 0.9 }).combine(TransitionEffect.OPACITY))
+  }
+
+  private batchSummary(): string {
+    let skipped: number = Math.max(0, this.batchCount() - this.batchSucceeded - this.batchFailed);
+    let summary: string = '成功 ' + this.batchSucceeded.toString() + ' 个';
+    if (this.batchFailed > 0) {
+      summary += ' · 失败 ' + this.batchFailed.toString() + ' 个';
+    }
+    if (skipped > 0) {
+      summary += ' · 未处理 ' + skipped.toString() + ' 个';
+    }
+    return summary;
+  }
+
+  @Builder
+  private batchOutputRow(output: BatchOutput) {
+    Row() {
+      SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 22, fontColor: Theme.accent() })
+        .margin({ right: 12 })
+      Column({ space: 5 }) {
+        Text(output.name)
+          .fontSize(15)
+          .fontWeight(700)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(output.width.toString() + ' × ' + output.height.toString() + ' · ' +
+          output.fps.toString() + ' fps · ' + MediaService.formatBytes(output.size))
+          .fontSize(12)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      SymbolBySymbolName({ name: 'checkmark.circle.fill', fontSize: 20, fontColor: Theme.success() })
+    }
+    .width('100%')
+    .height(70)
+    .padding({ left: 14, right: 14 })
+    .borderRadius(8)
+    .backgroundColor(Theme.panelBg(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+  }
+
+  @Builder
+  private batchResultView() {
+    Scroll() {
+      Column() {
+        SymbolBySymbolName({
+          name: this.batchSucceeded > 0 ? 'checkmark.circle.fill' : 'xmark.circle.fill',
+          fontSize: 62,
+          fontColor: this.batchSucceeded > 0 ? Theme.success() : Theme.warning()
+        })
+
+        Text(this.stopRequested ? '批量任务已停止' : '批量转换完成')
+          .fontSize(28)
+          .fontWeight(900)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+          .margin({ top: 18 })
+        Text(this.batchSummary())
+          .fontSize(15)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .margin({ top: 8, bottom: 24 })
+
+        if (this.batchOutputs.length > 0) {
+          Column({ space: 10 }) {
+            ForEach(this.batchOutputs, (output: BatchOutput) => {
+              this.batchOutputRow(output)
+            }, (output: BatchOutput) => output.path)
+          }
+          .width('100%')
+
+          Button() {
+            Row({ space: 8 }) {
+              if (this.isBatchSaving) {
+                LoadingProgress()
+                  .width(22)
+                  .height(22)
+                  .color(Color.White)
+              } else {
+                SymbolBySymbolName({ name: 'square.and.arrow.down.fill', fontSize: 20, fontColor: Color.White })
+              }
+              Text(this.isBatchSaving ? '保存中 ' + this.batchSaveProgress.toString() + '%' : '全部保存到相册')
+                .fontSize(17)
+                .fontWeight(800)
+                .fontColor(Color.White)
+            }
+          }
+          .width('100%')
+          .height(56)
+          .borderRadius(28)
+          .backgroundColor(Theme.accent())
+          .enabled(!this.isBatchSaving)
+          .margin({ top: 24 })
+          .onClick(() => { this.saveBatchOutputs(); })
+        }
+
+        Button('回到首页')
+          .width('100%')
+          .height(54)
+          .fontSize(16)
+          .fontWeight(700)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+          .borderRadius(27)
+          .backgroundColor(Theme.panelBg(this.colorMode === 0))
+          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+          .margin({ top: 12, bottom: 24 })
+          .onClick(() => { this.goHome(); })
+      }
+      .width('calc(100% - 40px)')
+      .constraintSize({ maxWidth: 620 })
+      .padding({ top: 40, bottom: 24 })
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .scrollBar(BarState.Auto)
   }
 
   build() {
@@ -709,7 +993,9 @@ struct ConvertPage {
           ]
         })
 
-      if (this.isConverting) {
+      if (this.batchComplete) {
+        this.batchResultView()
+      } else if (this.isConverting) {
         this.progressView()
       } else {
         Scroll() {

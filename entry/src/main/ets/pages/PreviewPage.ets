@@ -13,6 +13,7 @@ struct PreviewPage {
   @State sourceName: string = 'GIF 结果';
   @State widthValue: number = 0;
   @State heightValue: number = 0;
+  @State fpsValue: number = 0;
   @State frames: number = 0;
   @State fileSizeBytes: number = 0;
   @State isSaving: boolean = false;
@@ -27,6 +28,7 @@ struct PreviewPage {
       this.sourceName = (params['sourceName'] as string) ?? 'GIF 结果';
       this.widthValue = (params['width'] as number) ?? 0;
       this.heightValue = (params['height'] as number) ?? 0;
+      this.fpsValue = (params['fps'] as number) ?? 0;
       this.frames = (params['frames'] as number) ?? 0;
       this.fileSizeBytes = (params['size'] as number) ?? 0;
     }
@@ -46,6 +48,7 @@ struct PreviewPage {
     item.path = this.outputPath;
     item.width = this.widthValue;
     item.height = this.heightValue;
+    item.fps = this.fpsValue;
     item.frames = this.frames;
     item.size = this.fileSizeBytes;
     item.createdAt = Date.now();
@@ -65,6 +68,10 @@ struct PreviewPage {
   private goHome(): void {
     router.clear();
     router.pushUrl({ url: 'pages/Index' });
+  }
+
+  private frameRateLabel(): string {
+    return this.fpsValue > 0 ? this.fpsValue.toString() + ' fps' : '帧率未记录';
   }
 
   build() {
@@ -118,7 +125,8 @@ struct PreviewPage {
               .fontSize(24)
               .fontWeight(900)
               .fontColor(Theme.textPrimary(this.colorMode === 0))
-            Text(this.widthValue + ' × ' + this.heightValue + ' · ' + this.frames + ' 帧 · ' + MediaService.formatBytes(this.fileSizeBytes))
+            Text(this.widthValue + ' × ' + this.heightValue + ' · ' + this.frameRateLabel() + ' · ' +
+              MediaService.formatBytes(this.fileSizeBytes))
               .fontSize(14)
               .fontColor(Theme.textSecondary(this.colorMode === 0))
               .margin({ top: 8 })

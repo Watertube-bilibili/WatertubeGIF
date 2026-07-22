@@ -4,6 +4,7 @@ import { VideoMetadata } from '../main/ets/common/MediaModels';
 import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/services/GifPlanningService';
 import { HistoryCodec, HistoryItem } from '../main/ets/services/HistoryCodec';
 import { StorageSummary, ToolboxService } from '../main/ets/services/ToolboxService';
+import { BatchSource, BatchSourceCodec } from '../main/ets/common/BatchModels';
 
 export default function localUnitTest() {
   describe('GifPlanningService', () => {
@@ -84,6 +85,7 @@ export default function localUnitTest() {
       expect(history[0].title).assertEqual('未命名动图');
       expect(history[0].width).assertEqual(480);
       expect(history[0].height).assertEqual(270);
+      expect(history[0].fps).assertEqual(0);
       expect(history[0].id.length > 0).assertTrue();
     });
 
@@ -106,6 +108,38 @@ export default function localUnitTest() {
     it('returns an empty list for malformed persisted data', 0, () => {
       let history: HistoryItem[] = HistoryCodec.decode('{broken json');
       expect(history.length).assertEqual(0);
+    });
+
+    it('preserves the actual output frame rate', 0, () => {
+      let history: HistoryItem[] = HistoryCodec.decode(
+        '[{"path":"/data/result.gif","fps":12,"frames":200}]');
+      expect(history[0].fps).assertEqual(12);
+      expect(history[0].frames).assertEqual(200);
+    });
+  });
+
+  describe('BatchSourceCodec', () => {
+    it('drops invalid and duplicate video selections', 0, () => {
+      let sources: BatchSource[] = BatchSourceCodec.decode(
+        '[{"uri":"photo://one","name":"one.mp4"},{"uri":"photo://one"},{"name":"missing.mp4"}]');
+      expect(sources.length).assertEqual(1);
+      expect(sources[0].name).assertEqual('one.mp4');
+    });
+
+    it('limits a batch to twenty videos', 0, () => {
+      let sources: BatchSource[] = [];
+      for (let index: number = 0; index < AppConstants.MAX_BATCH_ITEMS + 5; index++) {
+        let source: BatchSource = new BatchSource();
+        source.uri = 'photo://' + index.toString();
+        source.name = 'video-' + index.toString();
+        sources.push(source);
+      }
+      let decoded: BatchSource[] = BatchSourceCodec.decode(BatchSourceCodec.encode(sources));
+      expect(decoded.length).assertEqual(AppConstants.MAX_BATCH_ITEMS);
+    });
+
+    it('returns an empty batch for malformed payloads', 0, () => {
+      expect(BatchSourceCodec.decode('{broken').length).assertEqual(0);
     });
   });
 

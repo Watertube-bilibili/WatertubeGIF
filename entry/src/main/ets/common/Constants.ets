@@ -9,6 +9,7 @@ export class AppConstants {
   static readonly QUALITY_ECONOMY: number = 3;
   static readonly DEFAULT_QUALITY: number = AppConstants.QUALITY_MEDIUM;
   static readonly MAX_DURATION_SECONDS: number = 2 * 60 * 60;
+  static readonly MAX_BATCH_ITEMS: number = 20;
   static readonly MAX_FRAMES: number = 360;
   static readonly MAX_FRAMES_WECHAT: number = 180;
   static readonly MAX_FRAMES_ULTRA: number = 720;

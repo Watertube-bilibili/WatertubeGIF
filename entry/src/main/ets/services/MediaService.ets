@@ -4,6 +4,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { VideoMetadata } from '../common/MediaModels';
+import { AppConstants } from '../common/Constants';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'MediaService';
@@ -15,17 +16,30 @@ export class PickedMedia {
 
 export class MediaService {
   static async pickVideo(): Promise<PickedMedia> {
+    let selected: PickedMedia[] = await MediaService.pickVideos(1);
+    return selected.length > 0 ? selected[0] : new PickedMedia();
+  }
+
+  static async pickVideos(maxSelectNumber: number = AppConstants.MAX_BATCH_ITEMS): Promise<PickedMedia[]> {
     let picker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
     let options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
+    let limit: number = Math.max(1, Math.min(AppConstants.MAX_BATCH_ITEMS, Math.round(maxSelectNumber)));
     options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE;
-    options.maxSelectNumber = 1;
+    options.maxSelectNumber = limit;
     let res: photoAccessHelper.PhotoSelectResult = await picker.select(options);
-    let media: PickedMedia = new PickedMedia();
-    if (res.photoUris.length > 0) {
-      media.uri = res.photoUris[0];
-      media.name = MediaService.displayName(media.uri);
+    let selected: PickedMedia[] = [];
+    let usedUris: Set<string> = new Set<string>();
+    for (let uri of res.photoUris) {
+      if (selected.length >= limit || uri.length === 0 || usedUris.has(uri)) {
+        continue;
+      }
+      let media: PickedMedia = new PickedMedia();
+      media.uri = uri;
+      media.name = MediaService.displayName(uri);
+      selected.push(media);
+      usedUris.add(uri);
     }
-    return media;
+    return selected;
   }
 
   static async ensureWritePermission(ctx: common.UIAbilityContext): Promise<boolean> {
@@ -87,19 +101,34 @@ export class MediaService {
     if (!allowed) {
       return false;
     }
+    return await MediaService.copyGifToGallery(ctx, gifPath);
+  }
 
+  static async saveGifsToGallery(ctx: common.UIAbilityContext, gifPaths: string[],
+    onProgress: (completed: number, total: number) => void): Promise<number> {
+    let allowed: boolean = await MediaService.ensureWritePermission(ctx);
+    if (!allowed) {
+      return 0;
+    }
+    let saved: number = 0;
+    for (let index: number = 0; index < gifPaths.length; index++) {
+      if (await MediaService.copyGifToGallery(ctx, gifPaths[index])) {
+        saved++;
+      }
+      onProgress(index + 1, gifPaths.length);
+    }
+    return saved;
+  }
+
+  private static async copyGifToGallery(ctx: common.UIAbilityContext, gifPath: string): Promise<boolean> {
     let source: fileIo.File | undefined = undefined;
     let target: fileIo.File | undefined = undefined;
     try {
       source = fileIo.openSync(gifPath, fileIo.OpenMode.READ_ONLY);
-      let stat: fileIo.Stat = fileIo.statSync(source.fd);
-      let buffer: ArrayBuffer = new ArrayBuffer(stat.size);
-      fileIo.readSync(source.fd, buffer);
-
       let helper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(ctx);
       let assetUri: string = await helper.createAsset(photoAccessHelper.PhotoType.IMAGE, 'gif');
       target = fileIo.openSync(assetUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
-      fileIo.writeSync(target.fd, buffer);
+      fileIo.copyFileSync(source.fd, target.fd);
       return true;
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'saveGifToGallery failed');
