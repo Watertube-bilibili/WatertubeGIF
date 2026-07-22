@@ -18,6 +18,7 @@ export struct SymbolBySymbolName {
       'chevron.left': '‹',
       'chevron.right': '›',
       'gearshape.fill': '⚙',
+      'wrench.fill': '⚒',
       'flask.fill': '⚗',
       'die.face.5.fill': '⚄',
       'shuffle': '⇄',

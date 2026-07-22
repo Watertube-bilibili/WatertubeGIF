@@ -151,7 +151,7 @@ struct Index {
   }
 
   private openLab(): void {
-    router.pushUrl({ url: 'pages/LabPage' });
+    router.pushUrl({ url: 'pages/ToolboxPage' });
   }
 
   private async clearHistory(): Promise<void> {
@@ -189,7 +189,7 @@ struct Index {
 
       Button() {
         SymbolBySymbolName({
-          name: 'flask.fill',
+          name: 'wrench.fill',
           fontSize: 21,
           fontColor: Theme.accent()
         })
@@ -198,6 +198,7 @@ struct Index {
       .height(40)
       .borderRadius(20)
       .backgroundColor(Color.Transparent)
+      .accessibilityText('GIF 工具箱')
       .margin({ right: 4 })
       .onClick(() => { this.openLab(); })
 

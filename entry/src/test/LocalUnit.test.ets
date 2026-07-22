@@ -3,6 +3,7 @@ import { AppConstants } from '../main/ets/common/Constants';
 import { VideoMetadata } from '../main/ets/common/MediaModels';
 import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/services/GifPlanningService';
 import { HistoryCodec, HistoryItem } from '../main/ets/services/HistoryCodec';
+import { StorageSummary, ToolboxService } from '../main/ets/services/ToolboxService';
 
 export default function localUnitTest() {
   describe('GifPlanningService', () => {
@@ -105,6 +106,26 @@ export default function localUnitTest() {
     it('returns an empty list for malformed persisted data', 0, () => {
       let history: HistoryItem[] = HistoryCodec.decode('{broken json');
       expect(history.length).assertEqual(0);
+    });
+  });
+
+  describe('ToolboxService', () => {
+    it('summarizes history storage without trusting negative sizes', 0, () => {
+      let first: HistoryItem = new HistoryItem();
+      first.size = 1024;
+      let second: HistoryItem = new HistoryItem();
+      second.size = -20;
+      let summary: StorageSummary = ToolboxService.summarize([first, second]);
+
+      expect(summary.count).assertEqual(2);
+      expect(summary.totalBytes).assertEqual(1024);
+    });
+
+    it('only accepts generated GIF files inside the app files directory', 0, () => {
+      expect(ToolboxService.isOwnedOutput('/data/files/watertube_123.gif', '/data/files')).assertTrue();
+      expect(ToolboxService.isOwnedOutput('/data/files/../photo.gif', '/data/files')).assertFalse();
+      expect(ToolboxService.isOwnedOutput('/data/files/private.gif', '/data/files')).assertFalse();
+      expect(ToolboxService.isOwnedOutput('/other/watertube_123.gif', '/data/files')).assertFalse();
     });
   });
 }

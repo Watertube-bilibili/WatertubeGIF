@@ -72,6 +72,12 @@ export class AppStateService {
     await store.flush();
   }
 
+  static async replaceHistory(ctx: common.UIAbilityContext, history: HistoryItem[]): Promise<void> {
+    let store: preferences.Preferences = await AppStateService.store(ctx);
+    await store.put(KEY_HISTORY, JSON.stringify(history.slice(0, 20)));
+    await store.flush();
+  }
+
   static async anonymizeHistory(ctx: common.UIAbilityContext): Promise<number> {
     let history: HistoryItem[] = await AppStateService.loadHistory(ctx);
     let changed: number = 0;

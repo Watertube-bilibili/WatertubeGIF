@@ -4,6 +4,7 @@
     "pages/ConvertPage",
     "pages/PreviewPage",
     "pages/SettingsPage",
+    "pages/ToolboxPage",
     "pages/LabPage"
   ]
 }

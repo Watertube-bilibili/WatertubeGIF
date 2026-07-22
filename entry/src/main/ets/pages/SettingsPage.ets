@@ -419,17 +419,17 @@ struct SettingsPage {
               .fontColor(Theme.textSecondary(this.colorMode === 0))
               .margin({ top: 12, bottom: 40 })
 
-            this.sectionTitle('奇怪功能')
+            this.sectionTitle('工具与隐私')
             this.switchRow('社死保护', '已保护 ' + this.protectedHistoryCount.toString() + ' 条历史，新记录也会自动隐藏名称',
               this.stealthNames, (checked: boolean) => { this.changeStealthNames(checked); })
 
             Row() {
               Column() {
-                Text('水管实验室')
+                Text('GIF 工具箱')
                   .fontSize(16)
                   .fontWeight(650)
                   .fontColor(Theme.textPrimary(this.colorMode === 0))
-                Text('参数扭蛋、GIF 黄历和历史抽卡')
+                Text('素材体检、体积预算、空间清理和灵感工具')
                   .fontSize(12)
                   .fontColor(Theme.textSecondary(this.colorMode === 0))
                   .margin({ top: 4 })
@@ -443,7 +443,7 @@ struct SettingsPage {
               .height(40)
               .borderRadius(20)
               .backgroundColor(Color.Transparent)
-              .onClick(() => { router.pushUrl({ url: 'pages/LabPage' }); })
+              .onClick(() => { router.pushUrl({ url: 'pages/ToolboxPage' }); })
             }
             .width('100%')
             .height(72)
