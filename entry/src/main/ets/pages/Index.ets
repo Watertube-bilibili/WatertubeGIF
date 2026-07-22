@@ -7,6 +7,7 @@ import {
   HdsSceneController,
   HdsSceneType,
   HdsTabs,
+  HdsTabsController,
   HdsTabsFloatingStyle,
   HdsVisualComponent,
   hdsMaterial
@@ -51,6 +52,7 @@ struct Index {
   private firstPageShow: boolean = true;
   private refreshRunning: boolean = false;
   private lightController: HdsSceneController = new HdsSceneController();
+  private tabsController: HdsTabsController = new HdsTabsController();
   private supportDialogController: CustomDialogController = new CustomDialogController({
     builder: (): void => { this.supportDialogBuilder(); },
     autoCancel: false
@@ -244,18 +246,31 @@ struct Index {
       date.getMinutes().toString().padStart(2, '0');
   }
 
-  private bottomTab(icon: Resource, label: string): BottomTabBarStyle {
-    return BottomTabBarStyle.of(icon, label)
-      .labelStyle({
-        font: { size: 11, weight: FontWeight.Medium },
-        selectedColor: Theme.accent(),
-        unselectedColor: Theme.textSecondary(this.colorMode === 0)
-      })
-      .iconStyle({
-        selectedColor: Theme.accent(),
-        unselectedColor: Theme.textSecondary(this.colorMode === 0)
-      })
-      .padding({ top: 4, bottom: 4 });
+  private switchTab(index: number): void {
+    this.selectedTab = index;
+    this.tabsController.changeIndex(index);
+  }
+
+  @Builder
+  private bottomTab(icon: Resource, label: string, index: number) {
+    Column({ space: 2 }) {
+      SymbolGlyph(icon)
+        .fontSize(24)
+        .fontColor([
+          this.selectedTab === index ? Theme.accent() : Theme.textSecondary(this.colorMode === 0)
+        ])
+
+      Text(label)
+        .fontSize(11)
+        .fontWeight(this.selectedTab === index ? FontWeight.Bold : FontWeight.Medium)
+        .fontColor(this.selectedTab === index ? Theme.accent() : Theme.textSecondary(this.colorMode === 0))
+        .maxLines(1)
+    }
+    .width(88)
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .accessibilityText(label)
   }
 
   @Builder
@@ -481,24 +496,28 @@ struct Index {
           .onDisAppear(() => { this.lightController.stop(); })
       }
 
-      HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+      HdsTabs({
+        barPosition: BarPosition.End,
+        index: this.selectedTab,
+        controller: this.tabsController
+      }) {
         TabContent() {
           this.homeTab()
         }
-        .tabBar(this.bottomTab($r('sys.symbol.house_fill'), '首页'))
+        .tabBar(this.bottomTab($r('sys.symbol.house_fill'), '首页', 0))
 
         TabContent() {
           ToolboxPage({ embedded: true })
         }
-        .tabBar(this.bottomTab($r('sys.symbol.wrench_and_screwdriver'), '工具箱'))
+        .tabBar(this.bottomTab($r('sys.symbol.wrench_and_screwdriver'), '工具箱', 1))
 
         TabContent() {
           SettingsPage({
             embedded: true,
-            openToolbox: () => { this.selectedTab = 1; }
+            openToolbox: () => { this.switchTab(1); }
           })
         }
-        .tabBar(this.bottomTab($r('sys.symbol.gearshape_fill'), '设置'))
+        .tabBar(this.bottomTab($r('sys.symbol.gearshape_fill'), '设置', 2))
       }
       .width('100%')
       .height('100%')

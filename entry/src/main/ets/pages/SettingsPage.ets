@@ -375,21 +375,27 @@ export struct SettingsPage {
             this.switchRow('社死保护', '已保护 ' + this.protectedHistoryCount.toString() + ' 条历史，新记录也会自动隐藏名称',
               this.stealthNames, (checked: boolean) => { this.changeStealthNames(checked); })
 
-            ComposeListItem({
-              contentItem: {
-                primaryText: 'GIF 工具箱',
-                secondaryText: '素材体检、体积预算、空间清理和灵感工具'
-              },
-              operateItem: {
-                button: {
-                  text: '打开'
+            Row({ space: 8 }) {
+              ComposeListItem({
+                contentItem: {
+                  primaryText: 'GIF 工具箱',
+                  secondaryText: '素材体检、体积预算、空间清理和灵感工具'
                 }
-              }
-            })
+              })
+              .layoutWeight(1)
+              .onClick(() => { this.openToolbox(); })
+
+              Button('打开')
+                .height(40)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(Theme.accent())
+                .backgroundColor(this.colorMode === 0 ? '#1F2D43' : '#EAF2FF')
+                .onClick(() => { this.openToolbox(); })
+            }
             .width('100%')
             .margin({ bottom: 40 })
             .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
-            .onClick(() => { this.openToolbox(); })
           }
           .width('100%')
           .padding({ left: 20, right: 20, bottom: this.embedded ? 116 : 32 })
