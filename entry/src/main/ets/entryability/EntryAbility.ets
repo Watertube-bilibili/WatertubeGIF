@@ -7,6 +7,7 @@ const TAG: string = 'EntryAbility';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    AppStorage.setOrCreate('lightSenseEnabled', true);
     let mode: ConfigurationConstant.ColorMode | undefined = undefined;
     try {
       mode = this.context.config.colorMode;

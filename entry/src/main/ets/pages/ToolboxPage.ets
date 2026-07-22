@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction, router } from '@kit.ArkUI';
+import { ComposeListItem, SegmentButton, SegmentButtonOptions, promptAction, router } from '@kit.ArkUI';
 import { fileIo } from '@kit.CoreFileKit';
 import { AppConstants } from '../common/Constants';
 import { VideoMetadata } from '../common/MediaModels';
@@ -25,9 +25,9 @@ class ToolboxConvertParams {
   smartSizeEnabled: boolean = true;
 }
 
-@Entry
 @Component
-struct ToolboxPage {
+export struct ToolboxPage {
+  @Prop embedded: boolean = false;
   @StorageProp('currentColorMode') colorMode: number = 1;
   @State quality: number = AppConstants.QUALITY_MEDIUM;
   @State outputWidth: number = AppConstants.DEFAULT_WIDTH;
@@ -43,6 +43,14 @@ struct ToolboxPage {
   @State sourceHeight: number = 1080;
   @State sourceDuration: number = 30;
   @State sourceOrientation: number = 0;
+  @State qualityIndexes: number[] = [2];
+  @State durationIndexes: number[] = [1];
+  @State qualityOptions: SegmentButtonOptions = SegmentButtonOptions.tab({
+    buttons: [{ text: '省流' }, { text: '微信' }, { text: '均衡' }, { text: '超高' }]
+  });
+  @State durationOptions: SegmentButtonOptions = SegmentButtonOptions.tab({
+    buttons: [{ text: '5 秒' }, { text: '10 秒' }, { text: '30 秒' }, { text: '完整' }]
+  });
 
   private sourceUri: string = '';
   private settings: AppSettings = new AppSettings();
@@ -63,6 +71,7 @@ struct ToolboxPage {
       this.quality = this.settings.defaultQuality;
       this.outputWidth = this.settings.defaultWidth;
       this.fps = this.settings.defaultFps;
+      this.syncQualityIndex();
     } catch (e) {
       promptAction.showToast({ message: '工具箱数据加载失败', duration: 1800 });
     }
@@ -166,6 +175,18 @@ struct ToolboxPage {
     this.quality = preset.quality;
     this.outputWidth = preset.width;
     this.fps = preset.fps;
+    this.syncQualityIndex();
+  }
+
+  private syncQualityIndex(): void {
+    this.qualityIndexes = [this.quality === AppConstants.QUALITY_ECONOMY ? 0 :
+      this.quality === AppConstants.QUALITY_WECHAT ? 1 :
+        this.quality === AppConstants.QUALITY_ULTRA ? 3 : 2];
+  }
+
+  private chooseDuration(index: number): void {
+    this.seconds = index === 0 ? 5 : index === 1 ? 10 : index === 2 ? 30 : 0;
+    this.durationIndexes = [index];
   }
 
   private applySmartRecommendation(): void {
@@ -173,6 +194,7 @@ struct ToolboxPage {
     this.quality = recommendation.quality;
     this.outputWidth = recommendation.width;
     this.fps = recommendation.fps;
+    this.syncQualityIndex();
     promptAction.showToast({
       message: this.metadataReady ? '已按当前素材生成建议' : '已按 30 秒横屏示例生成建议',
       duration: 1700
@@ -201,11 +223,13 @@ struct ToolboxPage {
       this.sourceOrientation = metadata.orientation;
       this.metadataReady = true;
       this.seconds = 0;
+      this.durationIndexes = [3];
 
       let recommendation: GifPlanOptions = GifPlanningService.recommend(metadata, 0);
       this.quality = recommendation.quality;
       this.outputWidth = recommendation.width;
       this.fps = recommendation.fps;
+      this.syncQualityIndex();
       promptAction.showToast({ message: '素材读取完成，已生成建议方案', duration: 1800 });
     } catch (e) {
       promptAction.showToast({ message: '无法读取该视频的信息', duration: 1900 });
@@ -235,6 +259,20 @@ struct ToolboxPage {
 
   private openLab(): void {
     router.pushUrl({ url: 'pages/LabPage' });
+  }
+
+  private openHistory(item: HistoryItem): void {
+    router.pushUrl({
+      url: 'pages/PreviewPage',
+      params: {
+        outputPath: item.path,
+        width: item.width,
+        height: item.height,
+        frames: item.frames,
+        size: item.size,
+        sourceName: item.title
+      }
+    });
   }
 
   private storageSummary(): StorageSummary {
@@ -361,31 +399,6 @@ struct ToolboxPage {
   }
 
   @Builder
-  private qualityOption(label: string, description: string, quality: number) {
-    Column() {
-      Text(label)
-        .fontSize(13)
-        .fontWeight(800)
-        .fontColor(this.quality === quality ? Color.White : Theme.textPrimary(this.colorMode === 0))
-      Text(description)
-        .fontSize(10)
-        .fontColor(this.quality === quality ? 'rgba(255,255,255,0.78)' :
-          Theme.textSecondary(this.colorMode === 0))
-        .maxLines(1)
-        .margin({ top: 3 })
-    }
-    .layoutWeight(1)
-    .height(66)
-    .padding({ left: 3, right: 3 })
-    .borderRadius(6)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(this.quality === quality ? Theme.accent() : Theme.panelBg(this.colorMode === 0))
-    .border({ width: 1, color: this.quality === quality ? Theme.accent() : Theme.border(this.colorMode === 0) })
-    .onClick(() => { this.applyQualityPreset(quality); })
-  }
-
-  @Builder
   private parameterSlider(label: string, valueLabel: string, min: number, max: number, step: number, value: number,
     change: (value: number) => void) {
     Column() {
@@ -410,19 +423,6 @@ struct ToolboxPage {
     }
     .width('100%')
     .margin({ top: 14 })
-  }
-
-  @Builder
-  private durationChoice(label: string, value: number) {
-    Button(label)
-      .layoutWeight(1)
-      .height(36)
-      .fontSize(12)
-      .fontWeight(this.seconds === value ? 750 : 500)
-      .fontColor(this.seconds === value ? Color.White : Theme.textPrimary(this.colorMode === 0))
-      .borderRadius(6)
-      .backgroundColor(this.seconds === value ? Theme.accent() : Color.Transparent)
-      .onClick(() => { this.seconds = value; })
   }
 
   @Builder
@@ -489,10 +489,8 @@ struct ToolboxPage {
       }
     }
     .width('100%')
-    .padding(18)
-    .borderRadius(8)
-    .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+    .padding({ top: 18, bottom: 18 })
+    .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
   }
 
   @Builder
@@ -527,13 +525,18 @@ struct ToolboxPage {
       .margin({ top: 12 })
       .border({ width: { top: 1, bottom: 1 }, color: Theme.border(this.colorMode === 0) })
 
-      Row({ space: 6 }) {
-        this.qualityOption('省流', '240 · 6fps', AppConstants.QUALITY_ECONOMY)
-        this.qualityOption('微信', '360 · 10fps', AppConstants.QUALITY_WECHAT)
-        this.qualityOption('均衡', '480 · 12fps', AppConstants.QUALITY_MEDIUM)
-        this.qualityOption('超高', '720 · 20fps', AppConstants.QUALITY_ULTRA)
-      }
+      SegmentButton({
+        options: this.qualityOptions,
+        selectedIndexes: $qualityIndexes,
+        enableStateAnimation: true,
+        onItemClicked: (index: number) => {
+          this.applyQualityPreset(index === 0 ? AppConstants.QUALITY_ECONOMY :
+            index === 1 ? AppConstants.QUALITY_WECHAT :
+              index === 3 ? AppConstants.QUALITY_ULTRA : AppConstants.QUALITY_MEDIUM);
+        }
+      })
       .width('100%')
+      .height(48)
       .margin({ top: 14 })
 
       this.parameterSlider('最长边', this.outputWidth.toString() + ' px', 160, 960, 20, this.outputWidth,
@@ -560,19 +563,21 @@ struct ToolboxPage {
         .trackColor('rgba(120,140,170,0.22)')
         .selectedColor(Theme.accent())
         .showTips(true)
-        .onChange((value: number) => { this.seconds = Math.round(value); })
+        .onChange((value: number) => {
+          this.seconds = Math.round(value);
+          this.durationIndexes = this.seconds === 5 ? [0] : this.seconds === 10 ? [1] :
+            this.seconds === 30 ? [2] : this.seconds === 0 ? [3] : [];
+        })
         .margin({ top: 7 })
 
-      Row({ space: 4 }) {
-        this.durationChoice('5 秒', 5)
-        this.durationChoice('10 秒', 10)
-        this.durationChoice('30 秒', 30)
-        this.durationChoice('完整', 0)
-      }
+      SegmentButton({
+        options: this.durationOptions,
+        selectedIndexes: $durationIndexes,
+        enableStateAnimation: true,
+        onItemClicked: (index: number) => { this.chooseDuration(index); }
+      })
       .width('100%')
-      .padding(3)
-      .borderRadius(8)
-      .backgroundColor(this.colorMode === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(20,40,80,0.05)')
+      .height(44)
       .margin({ top: 10 })
 
       Row() {
@@ -621,10 +626,8 @@ struct ToolboxPage {
       .margin({ top: 8 })
     }
     .width('100%')
-    .padding(18)
-    .borderRadius(8)
-    .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+    .padding({ top: 18, bottom: 18 })
+    .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
   }
 
   @Builder
@@ -684,10 +687,57 @@ struct ToolboxPage {
       .margin({ top: 14 })
     }
     .width('100%')
-    .padding(18)
-    .borderRadius(8)
-    .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+    .padding({ top: 18, bottom: 18 })
+    .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
+  }
+
+  @Builder
+  private recentHistoryTool() {
+    Column() {
+      Row() {
+        Text('最近作品')
+          .fontSize(18)
+          .fontWeight(800)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+        Blank()
+        Text(this.history.length.toString() + ' 项')
+          .fontSize(12)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
+
+      if (this.history.length === 0) {
+        ComposeListItem({
+          contentItem: {
+            primaryText: '暂无可用作品',
+            secondaryText: '完成一次转换后，可从这里快速查看和维护'
+          },
+          operateItem: {
+            text: '空'
+          }
+        })
+      } else {
+        ForEach(this.history.slice(0, 3), (item: HistoryItem) => {
+          ComposeListItem({
+            contentItem: {
+              primaryText: item.title.length > 0 ? item.title : '未命名动图',
+              secondaryText: item.width.toString() + ' × ' + item.height.toString() +
+                ' · ' + item.frames.toString() + ' 帧'
+            },
+            operateItem: {
+              text: MediaService.formatBytes(item.size)
+            }
+          })
+          .width('100%')
+          .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
+          .onClick(() => { this.openHistory(item); })
+        }, (item: HistoryItem) => item.id)
+      }
+    }
+    .width('100%')
+    .padding({ top: 18, bottom: 18 })
+    .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
   }
 
   build() {
@@ -695,27 +745,22 @@ struct ToolboxPage {
       Column()
         .width('100%')
         .height('100%')
-        .linearGradient({
-          angle: 145,
-          colors: [
-            [this.colorMode === 0 ? '#080B13' : '#F7FAFF', 0],
-            [this.colorMode === 0 ? '#142033' : '#E9F3FF', 0.56],
-            [this.colorMode === 0 ? '#071A17' : '#EAF9F4', 1]
-          ]
-        })
+        .backgroundColor(Theme.pageBg(this.colorMode === 0))
 
       Column() {
         Row() {
-          Button() {
-            SymbolBySymbolName({ name: 'chevron.left', fontSize: 25,
-              fontColor: Theme.textPrimary(this.colorMode === 0) })
+          if (!this.embedded) {
+            Button() {
+              SymbolBySymbolName({ name: 'chevron.left', fontSize: 25,
+                fontColor: Theme.textPrimary(this.colorMode === 0) })
+            }
+            .width(44)
+            .height(44)
+            .borderRadius(22)
+            .backgroundColor(Theme.panelBg(this.colorMode === 0))
+            .accessibilityText('返回')
+            .onClick(() => { router.back(); })
           }
-          .width(44)
-          .height(44)
-          .borderRadius(22)
-          .backgroundColor(Theme.panelBg(this.colorMode === 0))
-          .accessibilityText('返回')
-          .onClick(() => { router.back(); })
 
           Column() {
             Text('GIF 工具箱')
@@ -729,7 +774,7 @@ struct ToolboxPage {
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-          .margin({ left: 14 })
+          .margin({ left: this.embedded ? 0 : 14 })
 
           Button() {
             SymbolBySymbolName({ name: 'flask.fill', fontSize: 21, fontColor: Theme.accent() })
@@ -746,13 +791,14 @@ struct ToolboxPage {
         .padding({ left: 20, right: 20, top: 10 })
 
         Scroll() {
-          Column({ space: 14 }) {
+          Column() {
             this.materialTool()
             this.planTool()
+            this.recentHistoryTool()
             this.storageTool()
           }
           .width('100%')
-          .padding({ left: 20, right: 20, top: 6, bottom: 32 })
+          .padding({ left: 20, right: 20, top: 6, bottom: this.embedded ? 116 : 32 })
         }
         .width('100%')
         .layoutWeight(1)

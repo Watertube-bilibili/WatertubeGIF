@@ -17,8 +17,8 @@ export class AppSettings {
   defaultFps: number = AppConstants.DEFAULT_FPS;
   backgroundEnabled: boolean = true;
   liveViewEnabled: boolean = true;
-  lightSenseEnabled: boolean = false;
-  lightSensePreferenceVersion: number = 2;
+  lightSenseEnabled: boolean = true;
+  lightSensePreferenceVersion: number = 3;
   stealthNames: boolean = false;
   smartSizeEnabled: boolean = true;
 }
@@ -116,10 +116,10 @@ export class AppStateService {
         settings.backgroundEnabled);
       settings.liveViewEnabled = AppStateService.booleanValue(saved['liveViewEnabled'], settings.liveViewEnabled);
       let lightSensePreferenceVersion: number = Number(saved['lightSensePreferenceVersion'] ?? 0);
-      if (lightSensePreferenceVersion >= 2) {
-        settings.lightSenseEnabled = AppStateService.booleanValue(saved['lightSenseEnabled'], false);
+      if (lightSensePreferenceVersion >= 3) {
+        settings.lightSenseEnabled = AppStateService.booleanValue(saved['lightSenseEnabled'], true);
       }
-      settings.lightSensePreferenceVersion = 2;
+      settings.lightSensePreferenceVersion = 3;
       settings.stealthNames = AppStateService.booleanValue(saved['stealthNames'], settings.stealthNames);
       settings.smartSizeEnabled = AppStateService.booleanValue(saved['smartSizeEnabled'], settings.smartSizeEnabled);
     } catch (e) {

@@ -1,11 +1,23 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction, router } from '@kit.ArkUI';
+import { ConfirmDialog, promptAction, router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import {
+  DividerMode,
+  DualEdgeFlowLightWithMaskParam,
+  HdsSceneController,
+  HdsSceneType,
+  HdsTabs,
+  HdsTabsFloatingStyle,
+  HdsVisualComponent,
+  hdsMaterial
+} from '@kit.UIDesignKit';
 import { AppConstants } from '../common/Constants';
 import { Theme } from '../common/Theme';
 import { AppSettings, AppStateService, HistoryItem } from '../services/AppStateService';
+import { MaterialCapability, MaterialService } from '../services/MaterialService';
 import { MediaService, PickedMedia } from '../services/MediaService';
-import { SymbolBySymbolName } from '../components/SymbolBySymbolName';
+import { SettingsPage } from './SettingsPage';
+import { ToolboxPage } from './ToolboxPage';
 
 const DOMAIN: number = 0xFF01;
 const TAG: string = 'HomePage';
@@ -28,21 +40,77 @@ class ConvertParams {
 @Component
 struct Index {
   @StorageProp('currentColorMode') colorMode: number = 1;
+  @StorageLink('lightSenseEnabled') lightSenseEnabled: boolean = true;
+  @State selectedTab: number = 0;
   @State history: HistoryItem[] = [];
-  @State showSupportDialog: boolean = false;
   @State skipSupportSevenDays: boolean = false;
   @State isPicking: boolean = false;
-  @State listOpacity: number = 0;
-  @State listTranslateY: number = 20;
+  @State materialCapability: MaterialCapability = new MaterialCapability();
 
   private settings: AppSettings = new AppSettings();
   private firstPageShow: boolean = true;
   private refreshRunning: boolean = false;
+  private lightController: HdsSceneController = new HdsSceneController();
+  private supportDialogController: CustomDialogController = new CustomDialogController({
+    builder: (): void => { this.supportDialogBuilder(); },
+    autoCancel: false
+  });
+
+  aboutToAppear(): void {
+    this.configureLightScene();
+  }
 
   onPageShow(): void {
     let checkSupportDialog: boolean = this.firstPageShow;
     this.firstPageShow = false;
+    this.configureLightScene();
     this.refreshHome(checkSupportDialog);
+  }
+
+  private abilityContext(): common.UIAbilityContext {
+    return getContext(this) as common.UIAbilityContext;
+  }
+
+  private configureLightScene(): void {
+    let dark: boolean = this.colorMode === 0;
+    let params: DualEdgeFlowLightWithMaskParam = {
+      backgroundMaskColors: dark ? ['#08101F', '#10243A', '#071A18'] : ['#F7FAFF', '#E9F3FF', '#ECFAF6'],
+      firstEdgeFlowLight: {
+        startPos: 0.02,
+        endPos: 0.28,
+        color: dark ? '#5F8CFF' : '#80A9FF'
+      },
+      secondEdgeFlowLight: {
+        startPos: 0.52,
+        endPos: 0.82,
+        color: dark ? '#26D2C4' : '#63D8CA'
+      }
+    };
+    this.lightController.setSceneParams(params);
+  }
+
+  private lightSenseActive(): boolean {
+    return this.lightSenseEnabled && this.materialCapability.apiAvailable;
+  }
+
+  private floatingBarStyle(): HdsTabsFloatingStyle {
+    return {
+      barSideMargin: 16,
+      barBottomMargin: 12,
+      gradientMask: {
+        maskColor: this.colorMode === 0 ? '#05070D' : '#F7FAFF',
+        maskHeight: 112
+      },
+      adaptToHandedness: true,
+      lightColor: this.lightSenseActive() ? '#6FA3FF' : Color.Transparent,
+      systemMaterialEffect: {
+        materialType: this.lightSenseActive() && this.materialCapability.immersiveSupported ?
+          hdsMaterial.MaterialType.IMMERSIVE : hdsMaterial.MaterialType.ADAPTIVE,
+        materialLevel: hdsMaterial.MaterialLevel.GENTLE
+      },
+      thermoCtrl: true,
+      barOpacity: 0.98
+    };
   }
 
   private async refreshHome(checkSupportDialog: boolean): Promise<void> {
@@ -50,35 +118,30 @@ struct Index {
       return;
     }
     this.refreshRunning = true;
+    let shouldOpenSupport: boolean = false;
     try {
       let ctx: common.UIAbilityContext = this.abilityContext();
       this.history = await AppStateService.loadHistory(ctx);
       this.settings = await AppStateService.loadSettings(ctx);
-      if (checkSupportDialog) {
-        this.showSupportDialog = await AppStateService.shouldShowSupportDialog(ctx);
-      }
+      this.lightSenseEnabled = this.settings.lightSenseEnabled;
+      this.materialCapability = MaterialService.checkCapability();
+      shouldOpenSupport = checkSupportDialog && await AppStateService.shouldShowSupportDialog(ctx);
     } catch (e) {
       this.history = [];
       this.settings = new AppSettings();
-      this.showSupportDialog = false;
       hilog.error(DOMAIN, TAG, 'Home state initialization failed; defaults were restored');
     } finally {
       this.refreshRunning = false;
     }
 
-    try {
-      animateTo({ duration: 800, curve: Curve.FastOutSlowIn }, () => {
-        this.listOpacity = 1;
-        this.listTranslateY = 0;
-      });
-    } catch (e) {
-      this.listOpacity = 1;
-      this.listTranslateY = 0;
+    if (shouldOpenSupport) {
+      this.skipSupportSevenDays = false;
+      try {
+        this.supportDialogController.open();
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'Unable to open the support dialog');
+      }
     }
-  }
-
-  private abilityContext(): common.UIAbilityContext {
-    return getContext(this) as common.UIAbilityContext;
   }
 
   private async startConvert(): Promise<void> {
@@ -89,7 +152,6 @@ struct Index {
     try {
       let media: PickedMedia = await MediaService.pickVideo();
       if (media.uri.length === 0) {
-        this.isPicking = false;
         return;
       }
       let params: ConvertParams = new ConvertParams();
@@ -98,17 +160,15 @@ struct Index {
       params.width = this.settings.defaultWidth;
       params.fps = this.settings.defaultFps;
       params.seconds = AppConstants.DEFAULT_DURATION_SECONDS;
-      params.loop = true;
-      params.reverse = false;
       params.quality = this.settings.defaultQuality;
       params.backgroundEnabled = this.settings.backgroundEnabled;
       params.liveViewEnabled = this.settings.liveViewEnabled;
       params.smartSizeEnabled = this.settings.smartSizeEnabled;
-      this.isPicking = false;
       router.pushUrl({ url: 'pages/ConvertPage', params: params });
     } catch (e) {
-      this.isPicking = false;
       promptAction.showToast({ message: '选择视频失败', duration: 1800 });
+    } finally {
+      this.isPicking = false;
     }
   }
 
@@ -120,7 +180,7 @@ struct Index {
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'Unable to persist the support reminder preference');
     }
-    this.showSupportDialog = false;
+    this.supportDialogController.close();
   }
 
   private async supportNow(): Promise<void> {
@@ -146,14 +206,6 @@ struct Index {
     });
   }
 
-  private openSettings(): void {
-    router.pushUrl({ url: 'pages/SettingsPage' });
-  }
-
-  private openLab(): void {
-    router.pushUrl({ url: 'pages/ToolboxPage' });
-  }
-
   private async clearHistory(): Promise<void> {
     try {
       await AppStateService.clearHistory(this.abilityContext());
@@ -164,6 +216,27 @@ struct Index {
     }
   }
 
+  @Builder
+  private supportDialogBuilder() {
+    ConfirmDialog({
+      controller: this.supportDialogController,
+      title: '为水管系列应用发电',
+      content: '水管 GIF 坚持轻量、无广告。开发和适配需要持续投入，感谢你愿意支持我们继续把它做好。',
+      checkTips: '七天内不再提醒',
+      isChecked: this.skipSupportSevenDays,
+      primaryButton: {
+        value: '一键发电',
+        defaultFocus: true,
+        action: () => { this.supportNow(); }
+      },
+      secondaryButton: {
+        value: '稍后再说',
+        action: () => { this.closeSupportDialog(); }
+      },
+      onCheckedChange: (checked: boolean) => { this.skipSupportSevenDays = checked; }
+    })
+  }
+
   private formatTime(value: number): string {
     let date: Date = new Date(value);
     return (date.getMonth() + 1) + '/' + date.getDate() + ' ' +
@@ -171,367 +244,281 @@ struct Index {
       date.getMinutes().toString().padStart(2, '0');
   }
 
+  private bottomTab(icon: Resource, label: string): BottomTabBarStyle {
+    return BottomTabBarStyle.of(icon, label)
+      .labelStyle({
+        font: { size: 11, weight: FontWeight.Medium },
+        selectedColor: Theme.accent(),
+        unselectedColor: Theme.textSecondary(this.colorMode === 0)
+      })
+      .iconStyle({
+        selectedColor: Theme.accent(),
+        unselectedColor: Theme.textSecondary(this.colorMode === 0)
+      })
+      .padding({ top: 4, bottom: 4 });
+  }
+
   @Builder
-  private homeTitleBar() {
+  private homeHeader() {
     Row() {
       Column() {
         Text('水管 GIF')
-          .fontSize(24)
+          .fontSize(28)
           .fontWeight(850)
           .fontColor(Theme.textPrimary(this.colorMode === 0))
-        Text('轻量、清晰、动图转换专家')
-          .fontSize(12)
+        Text('视频转 GIF · 清晰、轻量、原生')
+          .fontSize(13)
           .fontColor(Theme.textSecondary(this.colorMode === 0))
-          .margin({ top: 3 })
+          .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button() {
-        SymbolBySymbolName({
-          name: 'wrench.fill',
-          fontSize: 21,
-          fontColor: Theme.accent()
-        })
+      if (this.lightSenseActive()) {
+        SymbolGlyph($r('sys.symbol.rays'))
+          .fontSize(26)
+          .fontColor([Theme.accent(), Theme.cyan()])
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_COLOR)
+          .accessibilityText('沉浸光感已开启')
       }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(Color.Transparent)
-      .accessibilityText('GIF 工具箱')
-      .margin({ right: 4 })
-      .onClick(() => { this.openLab(); })
-
-      Button() {
-        SymbolBySymbolName({
-          name: 'gearshape.fill',
-          fontSize: 21,
-          fontColor: Theme.textPrimary(this.colorMode === 0)
-        })
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(Color.Transparent)
-      .onClick(() => { this.openSettings(); })
-
-      Column() {
-        Text('GIF')
-          .fontSize(14)
-          .fontWeight(900)
-          .fontColor(Color.White)
-      }
-      .width(44)
-      .height(44)
-      .borderRadius(14)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .backgroundColor(Theme.accent())
-      .shadow({ radius: 12, color: 'rgba(47,125,255,0.25)', offsetX: 0, offsetY: 5 })
-      .margin({ left: 8 })
     }
     .width('100%')
-    .height(72)
-    .padding({ left: 20, right: 20 })
+    .height(82)
+    .padding({ left: 20, right: 20, top: 10 })
   }
 
-  build() {
-    Navigation() {
+  @Builder
+  private historySectionHeader() {
+    Row() {
+      Text('最近记录')
+        .fontSize(20)
+        .fontWeight(750)
+        .fontColor(Theme.textPrimary(this.colorMode === 0))
+      Blank()
+      if (this.history.length > 0) {
+        Text(this.history.length.toString() + ' 项')
+          .fontSize(13)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .margin({ right: 8 })
+        Button({ type: ButtonType.Circle, stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.trash_fill'))
+            .fontSize(18)
+            .fontColor([Theme.rose()])
+        }
+        .width(40)
+        .height(40)
+        .backgroundColor(Color.Transparent)
+        .accessibilityText('清空历史记录')
+        .onClick(() => { this.clearHistory(); })
+      }
+    }
+    .width('100%')
+    .height(54)
+  }
+
+  @Builder
+  private emptyHistory() {
+    Column({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.movie'))
+        .fontSize(64)
+        .fontColor([Theme.accent(), Theme.cyan()])
+        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_COLOR)
+      Text('暂无转换历史')
+        .fontSize(18)
+        .fontWeight(700)
+        .fontColor(Theme.textPrimary(this.colorMode === 0))
+      Text('点击右下角按钮，选择一个视频开始转换')
+        .fontSize(13)
+        .fontColor(Theme.textSecondary(this.colorMode === 0))
+        .textAlign(TextAlign.Center)
+    }
+    .width('100%')
+    .height(236)
+    .padding(24)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .borderRadius(8)
+    .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+  }
+
+  @Builder
+  private historyRow(item: HistoryItem) {
+    Row() {
       Stack() {
-        Column()
-          .width('100%')
-          .height('100%')
-          .linearGradient({
-            angle: 150,
-            colors: [
-              [this.colorMode === 0 ? '#0B0F19' : '#F4F7FE', 0],
-              [this.colorMode === 0 ? '#151C33' : '#EAF2FF', 0.5],
-              [this.colorMode === 0 ? '#0F1424' : '#F1F5F9', 1]
-            ]
-          })
+        SymbolGlyph($r('sys.symbol.picture_on_square'))
+          .fontSize(25)
+          .fontColor([Color.White])
+      }
+      .width(52)
+      .height(52)
+      .borderRadius(8)
+      .backgroundColor(Theme.accent())
+      .margin({ right: 14 })
 
-        Scroll() {
-          Column() {
-            this.homeTitleBar()
-
-            Column() {
-              Row() {
-                Text('最近记录')
-                  .fontSize(22)
-                  .fontWeight(800)
-                  .fontColor(Theme.textPrimary(this.colorMode === 0))
-                Blank()
-                if (this.history.length > 0) {
-                  Text(this.history.length + ' 项')
-                    .fontSize(14)
-                    .fontColor(Theme.textSecondary(this.colorMode === 0))
-                    .margin({ right: 12 })
-                  
-                  Button() {
-                    SymbolBySymbolName({ name: 'trash.fill', fontSize: 16, fontColor: Theme.rose() })
-                  }
-                  .width(32)
-                  .height(32)
-                  .backgroundColor(this.colorMode === 0 ? 'rgba(240,106,138,0.1)' : 'rgba(240,106,138,0.05)')
-                  .borderRadius(16)
-                  .onClick(() => { this.clearHistory(); })
-                }
-              }
-              .width('100%')
-              .margin({ bottom: 20, top: 12 })
-
-              if (this.history.length === 0) {
-                Column() {
-                  Column() {
-                    Text('GIF')
-                      .fontSize(22)
-                      .fontWeight(900)
-                      .fontColor(Color.White)
-                  }
-                    .width(76)
-                    .height(76)
-                    .borderRadius(24)
-                    .justifyContent(FlexAlign.Center)
-                    .alignItems(HorizontalAlign.Center)
-                    .backgroundColor(Theme.accent())
-                    .shadow({ radius: 18, color: 'rgba(47,125,255,0.28)', offsetX: 0, offsetY: 8 })
-                    .margin({ bottom: 20 })
-                  Text('暂无转换历史')
-                    .fontSize(18)
-                    .fontWeight(700)
-                    .fontColor(Theme.textPrimary(this.colorMode === 0))
-                  Text('开始你的第一个 GIF 创作吧')
-                    .fontSize(14)
-                    .fontColor(Theme.textSecondary(this.colorMode === 0))
-                    .textAlign(TextAlign.Center)
-                    .margin({ top: 8 })
-                }
-                .width('100%')
-                .padding(40)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center)
-                .borderRadius(28)
-                .backgroundColor(Theme.panelBg(this.colorMode === 0))
-                .backgroundBlurStyle(Theme.blurStyle(this.colorMode === 0))
-                .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-              } else {
-                List({ space: 12 }) {
-                  ForEach(this.history, (item: HistoryItem, index: number) => {
-                    ListItem() {
-                      Row() {
-                        Column() {
-                          SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 22, fontColor: Color.White })
-                        }
-                        .width(52)
-                        .height(52)
-                        .borderRadius(14)
-                        .linearGradient({
-                          angle: 135,
-                          colors: [
-                            ['#2F7DFF', 0],
-                            ['#21C7D9', 1]
-                          ]
-                        })
-                        .justifyContent(FlexAlign.Center)
-                        .alignItems(HorizontalAlign.Center)
-                        .margin({ right: 16 })
-
-                        Column() {
-                          Row() {
-                            Text(item.title.length > 0 ? item.title : '未命名动图')
-                              .fontSize(16)
-                              .fontWeight(700)
-                              .fontColor(Theme.textPrimary(this.colorMode === 0))
-                              .maxLines(1)
-                              .textOverflow({ overflow: TextOverflow.Ellipsis })
-                              .layoutWeight(1)
-                            if (item.protectedName) {
-                              Text('已隐藏')
-                                .fontSize(10)
-                                .fontWeight(700)
-                                .fontColor(Theme.success())
-                                .margin({ left: 8 })
-                            }
-                          }
-                          .width('100%')
-                          Text(item.width + '×' + item.height + ' · ' + MediaService.formatBytes(item.size))
-                            .fontSize(12)
-                            .fontColor(Theme.textSecondary(this.colorMode === 0))
-                            .margin({ top: 4 })
-                        }
-                        .alignItems(HorizontalAlign.Start)
-                        .layoutWeight(1)
-                        
-                        Column() {
-                          Text(this.formatTime(item.createdAt))
-                            .fontSize(11)
-                            .fontColor(Theme.textSecondary(this.colorMode === 0))
-                        }
-                        .alignItems(HorizontalAlign.End)
-                      }
-                      .width('100%')
-                      .padding(16)
-                      .borderRadius(24)
-                      .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-                      .backgroundBlurStyle(Theme.blurStyle(this.colorMode === 0))
-                      .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-                      .shadow({ radius: 12, color: 'rgba(0,0,0,0.04)', offsetX: 0, offsetY: 4 })
-                      .onClick(() => { this.openHistory(item); })
-                    }
-                    .transition(TransitionEffect.asymmetric(
-                      TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 20 })),
-                      TransitionEffect.OPACITY
-                    ))
-                  }, (item: HistoryItem) => item.id)
-                }
-                .width('100%')
-                .opacity(this.listOpacity)
-                .translate({ y: this.listTranslateY })
-              }
-            }
-            .width('100%')
-            .padding({ left: 20, right: 20, bottom: 120 })
-          }
-        }
-        .scrollBar(BarState.Off)
-        .width('100%')
-        .height('100%')
-
-        // Modern FAB
-        Button() {
-          Row() {
-            if (this.isPicking) {
-              LoadingProgress()
-                .width(24)
-                .height(24)
-                .color(Color.White)
-                .margin({ right: 8 })
-              Text('请稍候')
-                .fontSize(16)
-                .fontWeight(700)
-                .fontColor(Color.White)
-            } else {
-              SymbolBySymbolName({ 
-                name: 'plus', 
-                fontSize: 26, 
-                fontWeight: 800, 
-                fontColor: Color.White,
-                effectStrategy: SymbolEffectStrategy.NONE
-              })
-                .margin({ right: this.history.length === 0 ? 8 : 0 })
-              if (this.history.length === 0) {
-                Text('立即转换')
-                  .fontSize(16)
-                  .fontWeight(700)
-                  .fontColor(Color.White)
-              }
-            }
-          }
-        }
-        .width(this.isPicking || this.history.length === 0 ? 150 : 68)
-        .height(68)
-        .borderRadius(34)
-        .linearGradient({
-          angle: 135,
-          colors: [
-            ['#2F7DFF', 0],
-            ['#6366F1', 1]
-          ]
-        })
-        .shadow({ radius: 24, color: 'rgba(99,102,241,0.4)', offsetX: 0, offsetY: 12 })
-        .position({ right: 24, bottom: 40 })
-        .onClick(() => { this.startConvert(); })
-        .animation({ duration: 400, curve: Curve.Friction })
-
-        if (this.showSupportDialog) {
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.5)')
-            .transition(TransitionEffect.OPACITY.animation({ duration: 300 }))
-            .onClick(() => { this.closeSupportDialog(); })
-
-          Column() {
-            // Decoration for dialog
-            Column() {
-              SymbolBySymbolName({ 
-                name: 'heart.fill', 
-                fontSize: 44, 
-                fontColor: Theme.rose(),
-                effectStrategy: SymbolEffectStrategy.NONE
-              })
-            }
-            .width(88)
-            .height(88)
-            .borderRadius(44)
-            .backgroundColor(this.colorMode === 0 ? 'rgba(240,106,138,0.18)' : 'rgba(240,106,138,0.12)')
-            .justifyContent(FlexAlign.Center)
-            .margin({ bottom: 24 })
-
-            Text('支持开发者')
-              .fontSize(26)
-              .fontWeight(900)
-              .fontColor(Theme.textPrimary(this.colorMode === 0))
-            Text('每一份支持都是我们持续优化水管系列应用（轻量、无广告）的最大动力。')
+      Column({ space: 5 }) {
+        Row() {
+          Text(item.title.length > 0 ? item.title : '未命名动图')
+            .fontSize(16)
+            .fontWeight(650)
+            .fontColor(Theme.textPrimary(this.colorMode === 0))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          if (item.protectedName) {
+            SymbolGlyph($r('sys.symbol.lock_fill'))
               .fontSize(15)
-              .lineHeight(24)
-              .fontColor(Theme.textSecondary(this.colorMode === 0))
-              .textAlign(TextAlign.Center)
-              .margin({ top: 14, bottom: 32 })
-
-            Button('前往支持')
-              .width('100%')
-              .height(58)
-              .fontSize(18)
-              .fontWeight(800)
-              .fontColor(Color.White)
-              .borderRadius(29)
-              .backgroundColor(Theme.accent())
-              .shadow({ radius: 24, color: 'rgba(47,125,255,0.35)', offsetX: 0, offsetY: 12 })
-              .onClick(() => { this.supportNow(); })
-
-            Row() {
-              Row() {
-                Toggle({ type: ToggleType.Checkbox, isOn: this.skipSupportSevenDays })
-                  .width(20)
-                  .height(20)
-                  .selectedColor(Theme.accent())
-                  .onChange((checked: boolean) => { this.skipSupportSevenDays = checked; })
-                Text('七天内不再提醒')
-                  .fontSize(14)
-                  .fontColor(Theme.textSecondary(this.colorMode === 0))
-                  .margin({ left: 8 })
-              }
-              .onClick(() => { this.skipSupportSevenDays = !this.skipSupportSevenDays; })
-              
-              Blank()
-              
-              Text('稍后再说')
-                .fontSize(14)
-                .fontWeight(600)
-                .fontColor(Theme.textSecondary(this.colorMode === 0))
-                .padding(12)
-                .onClick(() => { this.closeSupportDialog(); })
-            }
-            .width('100%')
-            .margin({ top: 20 })
+              .fontColor([Theme.success()])
+              .accessibilityText('名称已隐藏')
           }
-          .width('calc(100% - 48px)')
-          .padding({ left: 32, right: 32, top: 40, bottom: 28 })
-          .borderRadius(36)
-          .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-          .shadow({ radius: 50, color: 'rgba(0,0,0,0.3)', offsetX: 0, offsetY: 25 })
-          .alignItems(HorizontalAlign.Center)
-          .transition(TransitionEffect.scale({ x: 0.9, y: 0.9 }).combine(TransitionEffect.OPACITY).animation({ duration: 400, curve: Curve.Friction }))
         }
+        .width('100%')
+        Text(item.width.toString() + ' × ' + item.height.toString() + ' · ' + MediaService.formatBytes(item.size) +
+          ' · ' + this.formatTime(item.createdAt))
+          .fontSize(12)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([Theme.textSecondary(this.colorMode === 0)])
+        .margin({ left: 8 })
+    }
+    .width('100%')
+    .height(82)
+    .padding({ left: 14, right: 14 })
+    .borderRadius(8)
+    .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+    .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+    .onClick(() => { this.openHistory(item); })
+  }
+
+  @Builder
+  private homeTab() {
+    Stack() {
+      Column() {
+        this.homeHeader()
+        List({ space: 10 }) {
+          ListItem() {
+            this.historySectionHeader()
+          }
+          if (this.history.length === 0) {
+            ListItem() {
+              this.emptyHistory()
+            }
+          } else {
+            ForEach(this.history, (item: HistoryItem) => {
+              ListItem() {
+                this.historyRow(item)
+              }
+            }, (item: HistoryItem) => item.id)
+          }
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: 20, right: 20, bottom: 118 })
+        .scrollBar(BarState.Off)
       }
       .width('100%')
       .height('100%')
+
+      Button({ type: ButtonType.Capsule, stateEffect: true }) {
+        Row({ space: 8 }) {
+          if (this.isPicking) {
+            LoadingProgress()
+              .width(22)
+              .height(22)
+              .color(Color.White)
+            Text('正在读取')
+              .fontSize(15)
+              .fontWeight(650)
+              .fontColor(Color.White)
+          } else {
+            SymbolGlyph($r('sys.symbol.plus'))
+              .fontSize(24)
+              .fontColor([Color.White])
+            if (this.history.length === 0) {
+              Text('立即转换')
+                .fontSize(15)
+                .fontWeight(650)
+                .fontColor(Color.White)
+            }
+          }
+        }
+      }
+      .width(this.isPicking || this.history.length === 0 ? 142 : 58)
+      .height(58)
+      .backgroundColor(Theme.accent())
+      .shadow({ radius: 16, color: 'rgba(47,125,255,0.32)', offsetX: 0, offsetY: 8 })
+      .position({ right: 22, bottom: 106 })
+      .accessibilityText('开始转换')
+      .enabled(!this.isPicking)
+      .onClick(() => { this.startConvert(); })
     }
-    .hideTitleBar(true)
-    .mode(NavigationMode.Stack)
-    .backgroundColor(Theme.pageBg(this.colorMode === 0))
+    .width('100%')
+    .height('100%')
+  }
+
+  build() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Theme.pageBg(this.colorMode === 0))
+
+      if (this.lightSenseActive()) {
+        HdsVisualComponent()
+          .scene(HdsSceneType.DUAL_EDGE_FLOW_LIGHT_WITH_BACKGROUND_MASK, this.lightController)
+          .width('100%')
+          .height('100%')
+          .opacity(this.colorMode === 0 ? 0.72 : 0.56)
+          .hitTestBehavior(HitTestMode.None)
+          .onAppear(() => { this.lightController.start(); })
+          .onDisAppear(() => { this.lightController.stop(); })
+      }
+
+      HdsTabs({ barPosition: BarPosition.End, index: this.selectedTab }) {
+        TabContent() {
+          this.homeTab()
+        }
+        .tabBar(this.bottomTab($r('sys.symbol.house_fill'), '首页'))
+
+        TabContent() {
+          ToolboxPage({ embedded: true })
+        }
+        .tabBar(this.bottomTab($r('sys.symbol.wrench_and_screwdriver'), '工具箱'))
+
+        TabContent() {
+          SettingsPage({
+            embedded: true,
+            openToolbox: () => { this.selectedTab = 1; }
+          })
+        }
+        .tabBar(this.bottomTab($r('sys.symbol.gearshape_fill'), '设置'))
+      }
+      .width('100%')
+      .height('100%')
+      .vertical(false)
+      .scrollable(false)
+      .barPosition(BarPosition.End)
+      .barHeight(72)
+      .barMode(BarMode.Fixed)
+      .barOverlap(true)
+      .barBackgroundColor(Color.Transparent)
+      .barFloatingStyle(this.floatingBarStyle())
+      .divider({ mode: DividerMode.NONE })
+      .onChange((index: number) => {
+        this.selectedTab = index;
+        if (index === 0) {
+          this.refreshHome(false);
+        }
+      })
+    }
+    .width('100%')
+    .height('100%')
   }
 }
