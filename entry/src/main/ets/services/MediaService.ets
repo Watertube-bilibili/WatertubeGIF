@@ -1,7 +1,7 @@
 import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { media } from '@kit.MediaKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
-import { fileIo } from '@kit.CoreFileKit';
+import { fileIo, picker } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { VideoMetadata } from '../common/MediaModels';
 import { AppConstants } from '../common/Constants';
@@ -40,6 +40,36 @@ export class MediaService {
       usedUris.add(uri);
     }
     return selected;
+  }
+
+  static async pickGifFromGallery(): Promise<PickedMedia> {
+    let photoPicker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
+    let options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
+    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    options.maxSelectNumber = 1;
+    let result: photoAccessHelper.PhotoSelectResult = await photoPicker.select(options);
+    if (result.photoUris.length === 0) {
+      return new PickedMedia();
+    }
+    let media: PickedMedia = new PickedMedia();
+    media.uri = result.photoUris[0];
+    media.name = MediaService.displayName(media.uri);
+    return media;
+  }
+
+  static async pickGifFromFiles(ctx: common.UIAbilityContext): Promise<PickedMedia> {
+    let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(ctx);
+    let options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 1;
+    options.fileSuffixFilters = ['GIF 动图|.gif'];
+    let uris: string[] = await documentPicker.select(options);
+    if (uris.length === 0) {
+      return new PickedMedia();
+    }
+    let media: PickedMedia = new PickedMedia();
+    media.uri = uris[0];
+    media.name = MediaService.displayName(media.uri);
+    return media;
   }
 
   static async ensureWritePermission(ctx: common.UIAbilityContext): Promise<boolean> {

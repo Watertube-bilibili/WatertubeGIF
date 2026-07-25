@@ -3,6 +3,7 @@
     "pages/Index",
     "pages/ConvertPage",
     "pages/PreviewPage",
-    "pages/LabPage"
+    "pages/LabPage",
+    "pages/GifEditorPage"
   ]
 }

@@ -261,6 +261,10 @@ export struct ToolboxPage {
     router.pushUrl({ url: 'pages/LabPage' });
   }
 
+  private openGifEditor(): void {
+    router.pushUrl({ url: 'pages/GifEditorPage' });
+  }
+
   private openHistory(item: HistoryItem): void {
     router.pushUrl({
       url: 'pages/PreviewPage',
@@ -268,6 +272,7 @@ export struct ToolboxPage {
         outputPath: item.path,
         width: item.width,
         height: item.height,
+        fps: item.fps,
         frames: item.frames,
         size: item.size,
         sourceName: item.title
@@ -692,6 +697,53 @@ export struct ToolboxPage {
   }
 
   @Builder
+  private gifEditorTool() {
+    Row() {
+      Column() {
+        SymbolBySymbolName({
+          name: 'photo.on.rectangle.angled',
+          fontSize: 31,
+          fontColor: Color.White
+        })
+      }
+      .width(52)
+      .height(52)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .borderRadius(6)
+      .backgroundColor(Theme.accent())
+
+      Column() {
+        Text('GIF 剪辑器')
+          .fontSize(18)
+          .fontWeight(850)
+          .fontColor(Theme.textPrimary(this.colorMode === 0))
+        Text('拖动入点和出点，按真实帧裁剪')
+          .fontSize(12)
+          .fontColor(Theme.textSecondary(this.colorMode === 0))
+          .margin({ top: 4 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      .margin({ left: 13 })
+
+      Button() {
+        SymbolBySymbolName({ name: 'chevron.right', fontSize: 20, fontColor: Theme.accent() })
+      }
+      .width(42)
+      .height(42)
+      .borderRadius(21)
+      .backgroundColor(this.colorMode === 0 ? 'rgba(47,125,255,0.14)' : 'rgba(47,125,255,0.09)')
+      .accessibilityText('打开 GIF 剪辑器')
+      .onClick(() => { this.openGifEditor(); })
+    }
+    .width('100%')
+    .padding({ top: 16, bottom: 16 })
+    .border({ width: { bottom: 1 }, color: Theme.border(this.colorMode === 0) })
+    .onClick(() => { this.openGifEditor(); })
+  }
+
+  @Builder
   private recentHistoryTool() {
     Column() {
       Row() {
@@ -792,6 +844,7 @@ export struct ToolboxPage {
 
         Scroll() {
           Column() {
+            this.gifEditorTool()
             this.materialTool()
             this.planTool()
             this.recentHistoryTool()

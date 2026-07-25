@@ -5,6 +5,7 @@ import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/service
 import { HistoryCodec, HistoryItem } from '../main/ets/services/HistoryCodec';
 import { StorageSummary, ToolboxService } from '../main/ets/services/ToolboxService';
 import { BatchSource, BatchSourceCodec } from '../main/ets/common/BatchModels';
+import { GifTimeline } from '../main/ets/services/GifTimeline';
 
 export default function localUnitTest() {
   describe('GifPlanningService', () => {
@@ -160,6 +161,31 @@ export default function localUnitTest() {
       expect(ToolboxService.isOwnedOutput('/data/files/../photo.gif', '/data/files')).assertFalse();
       expect(ToolboxService.isOwnedOutput('/data/files/private.gif', '/data/files')).assertFalse();
       expect(ToolboxService.isOwnedOutput('/other/watertube_123.gif', '/data/files')).assertFalse();
+    });
+  });
+
+  describe('GifTimeline', () => {
+    it('normalizes missing and invalid frame delays', 0, () => {
+      let delays: number[] = GifTimeline.normalizeDelays([80, 0], 4);
+      expect(delays.length).assertEqual(4);
+      expect(delays[0]).assertEqual(80);
+      expect(delays[1]).assertEqual(80);
+      expect(delays[3]).assertEqual(80);
+    });
+
+    it('maps time to variable-duration GIF frames', 0, () => {
+      let delays: number[] = [100, 250, 50];
+      expect(GifTimeline.durationMs(delays)).assertEqual(400);
+      expect(GifTimeline.frameIndexAtTime(delays, 99)).assertEqual(0);
+      expect(GifTimeline.frameIndexAtTime(delays, 100)).assertEqual(1);
+      expect(GifTimeline.frameIndexAtTime(delays, 399)).assertEqual(2);
+    });
+
+    it('snaps trim boundaries and counts selected frames', 0, () => {
+      let delays: number[] = [100, 200, 300, 400];
+      expect(GifTimeline.frameStartMs(delays, 2)).assertEqual(300);
+      expect(GifTimeline.frameEndMs(delays, 2)).assertEqual(600);
+      expect(GifTimeline.selectedFrameCount(delays, 100, 600)).assertEqual(2);
     });
   });
 }
