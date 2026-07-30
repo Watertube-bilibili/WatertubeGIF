@@ -68,7 +68,7 @@ struct GifEditorPage {
 
   private async chooseFromGallery(): Promise<void> {
     try {
-      let media: PickedMedia = await MediaService.pickGifFromGallery();
+      let media: PickedMedia = await MediaService.pickAnimatedImageFromGallery();
       await this.loadMedia(media);
     } catch (e) {
       promptAction.showToast({ message: '未能打开相册', duration: 1800 });
@@ -77,7 +77,7 @@ struct GifEditorPage {
 
   private async chooseFromFiles(): Promise<void> {
     try {
-      let media: PickedMedia = await MediaService.pickGifFromFiles(this.ctx);
+      let media: PickedMedia = await MediaService.pickAnimatedImageFromFiles(this.ctx);
       await this.loadMedia(media);
     } catch (e) {
       promptAction.showToast({ message: '未能打开文件选择器', duration: 1800 });
@@ -99,7 +99,7 @@ struct GifEditorPage {
       this.asset = nextAsset;
       this.thumbnails = nextThumbnails;
       this.previewPixelMap = nextPreview;
-      this.sourceName = media.name.length > 0 ? media.name : 'GIF 动图';
+      this.sourceName = media.name.length > 0 ? media.name : nextAsset.formatLabel + ' 动图';
       this.trimStartMs = 0;
       this.trimEndMs = nextAsset.durationMs;
       this.previewTimeMs = 0;
@@ -107,7 +107,7 @@ struct GifEditorPage {
       this.sourceReady = true;
     } catch (e) {
       this.editor.cleanupAsset(nextAsset);
-      promptAction.showToast({ message: '请选择包含至少 2 帧的有效 GIF 动图', duration: 2200 });
+      promptAction.showToast({ message: '请选择包含至少 2 帧的 GIF、动态 WebP 或 APNG', duration: 2400 });
     } finally {
       this.isLoading = false;
     }
@@ -143,6 +143,21 @@ struct GifEditorPage {
 
   private selectedDuration(): string {
     return this.formatTime(this.trimEndMs - this.trimStartMs);
+  }
+
+  private exportActionLabel(): string {
+    return this.asset.mimeType === 'image/gif' ? '导出剪辑' : '转换为 GIF';
+  }
+
+  private resultTitle(): string {
+    return this.result.sourceFormat === 'GIF' ? '剪辑完成' : '转换完成';
+  }
+
+  private resultModeLabel(): string {
+    if (this.result.sourceFormat !== 'GIF') {
+      return this.result.sourceFormat + ' 转为 GIF';
+    }
+    return this.result.lossless ? '原画快剪' : '完整画面重建';
   }
 
   private async updatePreview(timeMs: number): Promise<void> {
@@ -235,7 +250,7 @@ struct GifEditorPage {
       });
     this.isExporting = false;
     if (result.path.length === 0) {
-      promptAction.showToast({ message: '剪辑失败，请更换 GIF 后重试', duration: 2200 });
+      promptAction.showToast({ message: '处理失败，请更换动图后重试', duration: 2200 });
       return;
     }
     this.result = result;
@@ -275,11 +290,11 @@ struct GifEditorPage {
   private emptyState() {
     Column({ space: 14 }) {
       SymbolBySymbolName({ name: 'photo.on.rectangle.angled', fontSize: 64, fontColor: Theme.accent() })
-      Text('选择一张 GIF 开始剪辑')
+      Text('选择一张动图')
         .fontSize(22)
         .fontWeight(800)
         .fontColor(Theme.textPrimary(this.colorMode === 0))
-      Text('时间线按真实帧间隔生成，支持相册和文件选择')
+      Text('支持 GIF、动态 WebP 和 APNG，可转换并按帧剪辑')
         .fontSize(13)
         .fontColor(Theme.textSecondary(this.colorMode === 0))
         .textAlign(TextAlign.Center)
@@ -343,8 +358,8 @@ struct GifEditorPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        Text(this.asset.width.toString() + ' × ' + this.asset.height.toString() + ' · ' +
-          this.asset.frameCount.toString() + ' 帧')
+        Text(this.asset.formatLabel + ' · ' + this.asset.width.toString() + ' × ' +
+          this.asset.height.toString() + ' · ' + this.asset.frameCount.toString() + ' 帧')
           .fontSize(12)
           .fontColor(Theme.textSecondary(this.colorMode === 0))
       }
@@ -525,7 +540,7 @@ struct GifEditorPage {
       .height(64)
       .margin({ top: 8 })
 
-      Button('导出剪辑')
+      Button(this.exportActionLabel())
         .width('100%')
         .height(50)
         .fontSize(16)
@@ -579,11 +594,11 @@ struct GifEditorPage {
 
       Row() {
         Column() {
-          Text('剪辑完成')
+          Text(this.resultTitle())
             .fontSize(22)
             .fontWeight(850)
             .fontColor(Theme.textPrimary(this.colorMode === 0))
-          Text(this.result.lossless ? '原画快剪' : '完整画面重建')
+          Text(this.resultModeLabel())
             .fontSize(12)
             .fontColor(this.result.lossless ? Theme.success() : Theme.accent())
             .margin({ top: 4 })
@@ -661,11 +676,11 @@ struct GifEditorPage {
         .onClick(() => { router.back(); })
 
         Column() {
-          Text('GIF 剪辑器')
+          Text('动图转 GIF')
             .fontSize(24)
             .fontWeight(850)
             .fontColor(Theme.textPrimary(this.colorMode === 0))
-          Text('按帧选择，完整输出')
+          Text('转换、裁剪，一条时间线完成')
             .fontSize(12)
             .fontColor(Theme.textSecondary(this.colorMode === 0))
             .margin({ top: 2 })

@@ -7,7 +7,9 @@ WatertubeGIF 是一个基于 HarmonyOS ArkTS 的视频转 GIF 应用。它面向
 ## 功能概览
 
 - 从系统相册选择单个视频，或一次选择最多 20 个视频批量转换。
-- 提供独立 GIF 剪辑器，可像剪视频一样在缩略图时间线上拖动入点和出点。
+- 提供动图转 GIF 与 GIF 剪辑器，支持动态 WebP、APNG 和 GIF 输入。
+- 动态 WebP/APNG 使用 HarmonyOS 官方逐帧解码与序列编码接口生成 GIF，不会只保存第一帧。
+- 可像剪视频一样在缩略图时间线上拖动入点和出点。
 - GIF 剪辑支持按真实帧边界吸附、前后逐帧微调、前半段/后半段快捷选区和循环设置。
 - 剪辑素材既可从系统相册选择，也可通过系统文件选择器打开。
 - 转换前可调整输出宽度、帧率、截取时长、循环播放和倒放。
@@ -25,6 +27,7 @@ WatertubeGIF 是一个基于 HarmonyOS ArkTS 的视频转 GIF 应用。它面向
 - 可开启“社死保护”，避免在历史记录中显示原视频文件名。
 - 支持开发者弹窗可设置七天内不再提醒。
 - 接入后台连续任务和 Live View Kit，在状态栏胶囊、锁屏和通知中心展示 GIF 导出进度。
+- 面向 API 26 提供“最近 GIF”Application Skill，可由支持该能力的系统智能入口只读查询最近有效作品。
 
 ## 项目优点
 
@@ -42,7 +45,7 @@ WatertubeGIF 是一个基于 HarmonyOS ArkTS 的视频转 GIF 应用。它面向
 - `SettingsPage.ets`：默认输出、后台转换、实况窗和界面材质状态。
 - `ToolboxPage.ets`：素材分析、方案预算和历史空间维护。
 - `LabPage.ets`：随机参数生成、每日提示和随机历史访问。
-- `GifEditorPage.ets`：GIF 时间线、入点/出点选择、逐帧预览、剪辑导出和保存。
+- `GifEditorPage.ets`：动图转 GIF、GIF 时间线、逐帧预览、剪辑导出和保存。
 
 ### 2. 输出比例处理更稳
 
@@ -207,19 +210,28 @@ GIF 转换属于 Live View Kit 允许的 `PROGRESS` 场景，即音视频编辑�
 - 是否启用沉浸光感；设备不支持沉浸材质时自动使用系统自适应材质。
 - 是否匿名化新旧历史记录名称。
 
-### 7. API 24 与沉浸光感运行边界
+### 7. API 26 增强与 API 24 兼容边界
 
-1.2.1 恢复华为 HDS 沉浸材质、双边缘流光和悬浮标签栏。由于这些能力从 API 23 起提供，而本项目还使用 API 24 的分段控件状态动效，为避免低版本设备在静态加载 HDS 模块时发生启动异常，当前最低兼容版本已统一提升到 API 24。
+当前工程使用 API 26 SDK 编译并将目标版本设为 API 26，但最低兼容版本继续保持 API 24。新能力均采用运行时版本分支，API 24 不会静态加载仅在 API 26 提供的接口：
 
-应用会调用 `hdsMaterial.getSystemMaterialTypes()` 检查设备是否提供 `IMMERSIVE` 材质；不支持时底栏自动回退到 `ADAPTIVE`。双边缘流光可在设置页独立关闭。当前自动化构建和单元测试已通过，但 HDS 的最终光效、温控降级和横竖屏布局仍需在 API 24 真机上持续验证。
+- API 26 读取 `GifMetadata`，获得逐帧延时、画布尺寸、循环次数和处置方式；API 24 继续使用 Image Kit 原有的帧延时列表和图片信息。
+- API 26 使用后台长任务授权结果接口；API 24 继续调用旧授权接口。
+- API 26 为实况窗设置应用进程退出时自动结束的生命周期模式；API 24 创建实况窗时不写入该字段。
+- `recent-gif` Application Skill 只读取历史记录并返回仍存在的最近 GIF，不提供删除、覆盖或写入能力。
+
+沉浸光感继续使用从 API 23 起可用的 HDS `MaterialType.IMMERSIVE`、`HdsVisualComponent` 和双边缘流光，以保障 API 24 启动兼容。应用会调用 `hdsMaterial.getSystemMaterialTypes()` 检查设备支持情况；不支持时底栏自动回退到 `ADAPTIVE`。API 26 新增的 `uiMaterial.ImmersiveMaterial` 没有被静态引入，因为这样会破坏本项目对 API 24 的启动兼容承诺。
+
+相关官方资料：[HarmonyOS 26.0.0 Beta2](https://developer.huawei.com/consumer/cn/doc/harmonyos-releases/overview-2600)、[Application Skill 开发](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-skill-development-guide)、[GifMetadata](https://developer.huawei.com/consumer/cn/doc/harmonyos-references/arkts-apis-image-gifmetadata)。
 
 ### 8. 历史记录只保存应用内文件路径
 
 历史记录保存的是应用内部生成文件的位置。如果文件被单独删除，工具箱可以清理失效记录。打开历史项时仍不会自动修复或重新生成已丢失的 GIF。
 
-### 9. 保存到相册依赖系统权限
+### 9. 保存到相册需要用户确认
 
-保存 GIF 需要写入图片/视频权限。用户拒绝权限或系统媒体库行为变化时，保存可能失败。
+保存操作使用系统 `showAssetsCreationDialog()`。应用不再申请手机和平板上受限的 `WRITE_IMAGEVIDEO` 权限：用户点击保存后，由系统弹窗展示待保存作品；确认后应用只向系统授予的目标 URI 写入 GIF。批量保存会一次提交全部作品，避免逐张请求权限。
+
+用户取消系统弹窗、目标文件不可写或设备存储空间不足时，保存仍会失败；应用不会绕过系统确认静默写入相册。
 
 ### 10. 系统 Symbol 的设备差异
 
@@ -239,7 +251,7 @@ GIF 转换属于 Live View Kit 允许的 `PROGRESS` 场景，即音视频编辑�
 
 ### 13. 像剪视频一样剪 GIF
 
-1.5.0 在工具箱中加入独立 GIF 剪辑器。它不是简单填写起止秒数，而是先读取 GIF 的真实帧数和每帧延时，再生成可拖动的缩略图时间线：
+1.5.0 在工具箱中加入独立 GIF 剪辑器，1.5.1 将它扩展为“动图转 GIF”。它不是简单填写起止秒数，而是先读取动图的真实帧数和每帧延时，再生成可拖动的缩略图时间线：
 
 - 左右蓝色边界分别表示入点和出点，拖动时自动吸附到实际帧边界。
 - 入点和出点都提供前移一帧、后移一帧按钮，适合精确去掉片头或尾帧。
@@ -247,8 +259,11 @@ GIF 转换属于 Live View Kit 允许的 `PROGRESS` 场景，即音视频编辑�
 - 只解码少量均匀采样的缩略帧和当前预览帧，不会把长 GIF 的全部 `PixelMap` 常驻内存。
 - 导出后读取成品本身的尺寸、时长、帧数和文件大小，不使用推算值冒充结果。
 - 剪辑结果会立即进入历史记录，也可直接保存到系统相册。
+- 动态 WebP 和可被系统识别为多帧的 APNG 可直接转换为 GIF，并保留所选帧的原始延时。
 
 剪辑内核复用项目已有的开源 `@ohos/mp4parser` 2.0.8 和 FFmpeg 链路。选区从第 1 帧开始时使用流复制完成快速裁尾；剪掉开头或截取中段时，使用 FFmpeg `trim`、`setpts`、`palettegen` 和 `paletteuse` 重建首帧和调色板。这样可以避免从 GIF 增量帧中间直接复制后，首屏只剩局部小条或透明残片。
+
+动态 WebP/APNG 不直接交给项目内较旧的 FFmpeg 4.3.8 解码。应用先使用 HarmonyOS `ImageSource` 按帧生成完整 `PixelMap`，再通过 API 18 起提供的 `ImagePacker.packToFileFromPixelmapSequence()` 编码 GIF。该路径会校验成品帧数和时长，避免动态 WebP 被错误地当成静态图片。
 
 ### 14. GIF 剪辑已知边界
 
@@ -256,12 +271,14 @@ GIF 转换属于 Live View Kit 允许的 `PROGRESS` 场景，即音视频编辑�
 - 从中间开始的剪辑需要重新量化到 GIF 的 256 色调色板，复杂渐变仍可能出现轻微色带。
 - `@ohos/mp4parser` 暂未提供强制终止 `ffmpegCmd()` 的接口，导出中的停止操作会在当前原生处理返回后生效。
 - 时间线缩略图是均匀采样，用于定位整体内容；入点和出点数值及逐帧按钮使用完整延时表计算，不受缩略图数量影响。
+- 动态 WebP/APNG 单次最多转换 3000 帧。预计 RGBA 帧内存超过 160 MB 时会按原比例降低输出分辨率，以避免一次性序列编码导致内存崩溃。
+- APNG 是否能进入时间线取决于设备 Image Kit 是否将该文件识别为多帧 PNG；无法识别时应用会拒绝转换，不会静默输出第一帧。
 
 ## 构建
 
 推荐使用 DevEco Studio 或项目内 hvigor 构建。
 
-项目依赖 `@ohos/mp4parser 2.0.8`，使用 DevEco Studio 6.1.1 与 HarmonyOS 6.1.1（API 24）编译，最低兼容版本为 API 24。当前 HAP 仅打包 ARM64 FFmpeg 原生库。
+项目依赖 `@ohos/mp4parser 2.0.8`，当前使用 DevEco Studio 26.0.0 Beta2 与 HarmonyOS 26.0.0 SDK 编译，目标版本为 API 26，最低兼容版本保持 API 24。当前 HAP 仅打包 ARM64 FFmpeg 原生库。
 
 常用任务：
 
@@ -286,6 +303,19 @@ GitHub Release 通常上传 HAP 包；如果需要上传 APP 包，由于平台�
 - 剪掉开头时重建完整首帧，修复增量帧直接截取可能只显示局部画面的问题。
 - 裁尾优先原画快剪，中段剪辑使用 FFmpeg 高质量调色板链。
 - 成品展示并记录真实尺寸、时长、帧数和大小，不再用总帧数冒充帧率。
+
+### 1.5.1
+
+- GIF 剪辑器升级为“动图转 GIF”，新增动态 WebP 和 APNG 输入。
+- 使用 HarmonyOS ImageSource 逐帧解码，并使用 ImagePacker 序列编码 GIF，保留各帧真实延时。
+- 按官方接口要求将时间线毫秒转换为 GIF 的 10 毫秒延时单位，并从 APNG `fcTL` 帧控制块回退读取原始延时。
+- 动图仍可使用双端时间线、按帧吸附、逐帧微调和循环设置。
+- 为长动图增加 160 MB 解码预算与等比例降采样，降低内存峰值和闪退风险。
+- 工具箱入口、结果页、历史记录和相册保存流程已统一接入新格式。
+- 工程目标版本升级至 API 26，同时保留 API 24 最低兼容版本和旧接口回退。
+- API 26 使用 `GifMetadata` 补全真实画布、延时、循环次数和处置方式，并增强后台任务与实况窗生命周期处理。
+- 新增只读的“最近 GIF”Application Skill，支持系统智能入口查询最近有效作品。
+- 保存到相册改用系统确认弹窗，不再依赖受限的图库写权限；批量作品可一次确认。
 
 ### 1.3.0
 

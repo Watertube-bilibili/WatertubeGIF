@@ -11,17 +11,17 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
-    "requestPermissions": [
+    "skillProfiles": [
       {
-        "name": "ohos.permission.WRITE_IMAGEVIDEO",
-        "reason": "$string:permission_write_imagevideo",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility"
-          ],
-          "when": "inuse"
-        }
-      },
+        "name": "recent-gif",
+        "abilityName": "EntryAbility",
+        "srcEntries": [
+          "../../skills/recent-gif/scripts/RecentGifSkill.ets"
+        ],
+        "version": "1.0.0"
+      }
+    ],
+    "requestPermissions": [
       {
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
         "reason": "$string:permission_keep_background_running",

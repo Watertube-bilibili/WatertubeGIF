@@ -61,4 +61,46 @@ export class GifTimeline {
     let endIndex: number = GifTimeline.frameIndexAtTime(delays, Math.max(startMs, endMs - 1));
     return Math.max(1, endIndex - startIndex + 1);
   }
+
+  static toGifDelayUnits(delaysMs: number[]): number[] {
+    return delaysMs.map((delayMs: number): number => {
+      let units: number = Math.round(Math.max(1, delayMs) / 10);
+      return Math.max(1, Math.min(65535, units));
+    });
+  }
+
+  static apngDelayMs(numerator: number, denominator: number): number {
+    let safeNumerator: number = Math.max(0, Math.round(numerator));
+    let safeDenominator: number = denominator > 0 ? Math.round(denominator) : 100;
+    return Math.max(1, Math.round(safeNumerator * 1000 / safeDenominator));
+  }
+}
+
+export class AnimatedImageFormat {
+  static isSupported(mimeType: string): boolean {
+    let normalized: string = mimeType.toLowerCase();
+    return normalized === 'image/gif' || normalized === 'image/webp' || normalized === 'image/png';
+  }
+
+  static extension(mimeType: string): string {
+    let normalized: string = mimeType.toLowerCase();
+    if (normalized === 'image/webp') {
+      return '.webp';
+    }
+    if (normalized === 'image/png') {
+      return '.png';
+    }
+    return '.gif';
+  }
+
+  static label(mimeType: string): string {
+    let normalized: string = mimeType.toLowerCase();
+    if (normalized === 'image/webp') {
+      return '动态 WebP';
+    }
+    if (normalized === 'image/png') {
+      return 'APNG';
+    }
+    return 'GIF';
+  }
 }

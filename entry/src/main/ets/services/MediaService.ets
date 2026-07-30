@@ -1,7 +1,7 @@
-import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { media } from '@kit.MediaKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
-import { fileIo, picker } from '@kit.CoreFileKit';
+import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { VideoMetadata } from '../common/MediaModels';
 import { AppConstants } from '../common/Constants';
@@ -42,7 +42,7 @@ export class MediaService {
     return selected;
   }
 
-  static async pickGifFromGallery(): Promise<PickedMedia> {
+  static async pickAnimatedImageFromGallery(): Promise<PickedMedia> {
     let photoPicker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
     let options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
     options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
@@ -57,11 +57,11 @@ export class MediaService {
     return media;
   }
 
-  static async pickGifFromFiles(ctx: common.UIAbilityContext): Promise<PickedMedia> {
+  static async pickAnimatedImageFromFiles(ctx: common.UIAbilityContext): Promise<PickedMedia> {
     let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(ctx);
     let options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 1;
-    options.fileSuffixFilters = ['GIF 动图|.gif'];
+    options.fileSuffixFilters = ['动态图片|.gif,.webp,.png'];
     let uris: string[] = await documentPicker.select(options);
     if (uris.length === 0) {
       return new PickedMedia();
@@ -70,22 +70,6 @@ export class MediaService {
     media.uri = uris[0];
     media.name = MediaService.displayName(media.uri);
     return media;
-  }
-
-  static async ensureWritePermission(ctx: common.UIAbilityContext): Promise<boolean> {
-    let manager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
-    let permissions: Permissions[] = ['ohos.permission.WRITE_IMAGEVIDEO'];
-    let result: abilityAccessCtrl.GrantStatus = abilityAccessCtrl.GrantStatus.PERMISSION_DENIED;
-    try {
-      let grant = await manager.requestPermissionsFromUser(ctx, permissions);
-      if (grant.authResults.length > 0) {
-        result = grant.authResults[0];
-      }
-    } catch (e) {
-      hilog.error(DOMAIN, TAG, 'request permission failed');
-      return false;
-    }
-    return result === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
   }
 
   static async inspectVideo(sourceUri: string): Promise<VideoMetadata> {
@@ -127,22 +111,23 @@ export class MediaService {
   }
 
   static async saveGifToGallery(ctx: common.UIAbilityContext, gifPath: string): Promise<boolean> {
-    let allowed: boolean = await MediaService.ensureWritePermission(ctx);
-    if (!allowed) {
+    let targetUris: string[] = await MediaService.requestGalleryTargets(ctx, [gifPath]);
+    if (targetUris.length !== 1) {
       return false;
     }
-    return await MediaService.copyGifToGallery(ctx, gifPath);
+    return await MediaService.copyGifToGallery(gifPath, targetUris[0]);
   }
 
   static async saveGifsToGallery(ctx: common.UIAbilityContext, gifPaths: string[],
     onProgress: (completed: number, total: number) => void): Promise<number> {
-    let allowed: boolean = await MediaService.ensureWritePermission(ctx);
-    if (!allowed) {
+    if (gifPaths.length === 0) {
       return 0;
     }
+    let targetUris: string[] = await MediaService.requestGalleryTargets(ctx, gifPaths);
     let saved: number = 0;
     for (let index: number = 0; index < gifPaths.length; index++) {
-      if (await MediaService.copyGifToGallery(ctx, gifPaths[index])) {
+      if (index < targetUris.length &&
+        await MediaService.copyGifToGallery(gifPaths[index], targetUris[index])) {
         saved++;
       }
       onProgress(index + 1, gifPaths.length);
@@ -150,13 +135,29 @@ export class MediaService {
     return saved;
   }
 
-  private static async copyGifToGallery(ctx: common.UIAbilityContext, gifPath: string): Promise<boolean> {
+  private static async requestGalleryTargets(ctx: common.UIAbilityContext, gifPaths: string[]): Promise<string[]> {
+    try {
+      let helper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(ctx);
+      let sourceUris: string[] = gifPaths.map((path: string): string => fileUri.getUriFromPath(path));
+      let configs: photoAccessHelper.PhotoCreationConfig[] =
+        gifPaths.map((): photoAccessHelper.PhotoCreationConfig => {
+          return {
+            fileNameExtension: 'gif',
+            photoType: photoAccessHelper.PhotoType.IMAGE
+          };
+        });
+      return await helper.showAssetsCreationDialog(sourceUris, configs);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'requestGalleryTargets failed');
+      return [];
+    }
+  }
+
+  private static async copyGifToGallery(gifPath: string, assetUri: string): Promise<boolean> {
     let source: fileIo.File | undefined = undefined;
     let target: fileIo.File | undefined = undefined;
     try {
       source = fileIo.openSync(gifPath, fileIo.OpenMode.READ_ONLY);
-      let helper: photoAccessHelper.PhotoAccessHelper = photoAccessHelper.getPhotoAccessHelper(ctx);
-      let assetUri: string = await helper.createAsset(photoAccessHelper.PhotoType.IMAGE, 'gif');
       target = fileIo.openSync(assetUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
       fileIo.copyFileSync(source.fd, target.fd);
       return true;

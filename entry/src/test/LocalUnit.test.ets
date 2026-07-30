@@ -5,7 +5,7 @@ import { GifPlan, GifPlanningService, GifPlanOptions } from '../main/ets/service
 import { HistoryCodec, HistoryItem } from '../main/ets/services/HistoryCodec';
 import { StorageSummary, ToolboxService } from '../main/ets/services/ToolboxService';
 import { BatchSource, BatchSourceCodec } from '../main/ets/common/BatchModels';
-import { GifTimeline } from '../main/ets/services/GifTimeline';
+import { AnimatedImageFormat, GifTimeline } from '../main/ets/services/GifTimeline';
 
 export default function localUnitTest() {
   describe('GifPlanningService', () => {
@@ -186,6 +186,34 @@ export default function localUnitTest() {
       expect(GifTimeline.frameStartMs(delays, 2)).assertEqual(300);
       expect(GifTimeline.frameEndMs(delays, 2)).assertEqual(600);
       expect(GifTimeline.selectedFrameCount(delays, 100, 600)).assertEqual(2);
+    });
+  });
+
+  describe('AnimatedImageFormat', () => {
+    it('accepts GIF, WebP and APNG containers', 0, () => {
+      expect(AnimatedImageFormat.isSupported('image/gif')).assertTrue();
+      expect(AnimatedImageFormat.isSupported('image/webp')).assertTrue();
+      expect(AnimatedImageFormat.isSupported('image/png')).assertTrue();
+      expect(AnimatedImageFormat.isSupported('image/jpeg')).assertFalse();
+    });
+
+    it('maps animated image formats to safe sandbox suffixes', 0, () => {
+      expect(AnimatedImageFormat.extension('image/webp')).assertEqual('.webp');
+      expect(AnimatedImageFormat.extension('image/png')).assertEqual('.png');
+      expect(AnimatedImageFormat.label('image/webp')).assertEqual('动态 WebP');
+      expect(AnimatedImageFormat.label('image/png')).assertEqual('APNG');
+    });
+
+    it('converts timeline milliseconds to GIF centiseconds', 0, () => {
+      let units: number[] = GifTimeline.toGifDelayUnits([20, 100, 60000]);
+      expect(units[0]).assertEqual(2);
+      expect(units[1]).assertEqual(10);
+      expect(units[2]).assertEqual(6000);
+    });
+
+    it('normalizes APNG frame fractions to milliseconds', 0, () => {
+      expect(GifTimeline.apngDelayMs(1, 10)).assertEqual(100);
+      expect(GifTimeline.apngDelayMs(1, 0)).assertEqual(10);
     });
   });
 }

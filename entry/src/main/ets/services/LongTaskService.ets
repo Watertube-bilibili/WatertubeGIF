@@ -2,7 +2,7 @@ import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { liveViewManager } from '@kit.LiveViewKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 
 const TAG: string = 'LongTaskService';
 const DOMAIN: number = 0xFF02;
@@ -226,7 +226,9 @@ export class LongTaskService {
         result.message = '当前设备不支持媒体处理后台长任务';
         return result;
       }
-      let authResult: backgroundTaskManager.UserAuthResult = await request.checkSpecialScenarioAuth(context);
+      let authResult: backgroundTaskManager.UserAuthResult = deviceInfo.sdkApiVersion >= 26 ?
+        await request.checkSpecialScenarioAuthResult(context) :
+        await request.checkSpecialScenarioAuth(context);
       if (authResult === backgroundTaskManager.UserAuthResult.NOT_DETERMINED && requestAuthorization) {
         authResult = await this.askBackgroundAuthorization(context, request);
       }
@@ -280,7 +282,7 @@ export class LongTaskService {
       { text: message },
       { text: '  ' + progress.toString() + '%', textColor: ACCENT_COLOR }
     ];
-    return {
+    let liveView: liveViewManager.LiveView = {
       id: LIVE_VIEW_ID,
       event: LIVE_VIEW_EVENT,
       sequence: this.sequence,
@@ -312,6 +314,10 @@ export class LongTaskService {
         }
       }
     };
+    if (deviceInfo.sdkApiVersion >= 26) {
+      liveView.lifeCycleMode = liveViewManager.LifeCycleMode.AUTO_STOP_WHEN_APP_TERMINATE;
+    }
+    return liveView;
   }
 
   private async startLiveView(title: string, message: string): Promise<void> {
