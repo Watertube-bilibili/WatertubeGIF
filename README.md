@@ -75,11 +75,12 @@ WatertubeGIF 是一个基于 HarmonyOS ArkTS 的视频转 GIF 应用。它面向
 
 ### 6. 安装包体积优化
 
-`@ohos/mp4parser` 默认同时携带 ARM64、32 位 ARM 和 x86_64 三套 FFmpeg 动态库，这是旧包体积超过 69 MB 的主要原因。当前发布包通过 Hvigor `abiFilters` 和依赖原生库过滤，仅保留 `arm64-v8a`：
+`@ohos/mp4parser` 默认同时携带 ARM64、32 位 ARM 和 x86_64 三套 FFmpeg 动态库，这是旧包体积超过 69 MB 的主要原因。当前按构建模式配置 Hvigor `abiFilters` 和依赖原生库过滤：
 
 - HAP 从约 69.1 MB 降至约 22.2 MB，减少约 67.9%。
 - GIF 转换能力和 FFmpeg 功能保持不变。
-- 发布包支持现代 HarmonyOS ARM64 真机，不再支持 x86_64 模拟器和 32 位 ARM 设备。
+- Debug 包同时携带 `arm64-v8a` 与 `x86_64`，可直接部署到 ARM64 真机或 DevEco x86_64 模拟器。
+- Release 包仅保留 `arm64-v8a`，继续控制正式发布体积；不支持 x86_64 模拟器和 32 位 ARM 设备。
 
 ### 7. 四档质量预设
 
@@ -284,6 +285,7 @@ GIF 转换属于 Live View Kit 允许的 `PROGRESS` 场景，即音视频编辑�
 
 ```powershell
 hvigorw assembleHap --analyze=false --parallel --incremental
+hvigorw assembleHap -p buildMode=release --analyze=false --parallel --incremental
 hvigorw assembleApp --analyze=false --parallel --incremental
 ```
 
