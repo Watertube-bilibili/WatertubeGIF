@@ -20,6 +20,31 @@ export class MediaService {
     return selected.length > 0 ? selected[0] : new PickedMedia();
   }
 
+  static async loadSampleVideo(ctx: common.UIAbilityContext): Promise<PickedMedia> {
+    let outputPath: string = ctx.cacheDir + '/watertube_sample_video.mp4';
+    let output: fileIo.File | undefined = undefined;
+    try {
+      let content: Uint8Array = await ctx.resourceManager.getRawFileContent('sample_video.mp4');
+      output = fileIo.openSync(outputPath,
+        fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      let written: number = fileIo.writeSync(output.fd, content.buffer, {
+        offset: content.byteOffset,
+        length: content.byteLength
+      });
+      if (written !== content.byteLength) {
+        throw new Error('sample video was not fully copied');
+      }
+      let sample: PickedMedia = new PickedMedia();
+      sample.uri = outputPath;
+      sample.name = 'WaterTubeGIF 示例视频.mp4';
+      return sample;
+    } finally {
+      if (output !== undefined) {
+        fileIo.closeSync(output);
+      }
+    }
+  }
+
   static async pickVideos(maxSelectNumber: number = AppConstants.MAX_BATCH_ITEMS): Promise<PickedMedia[]> {
     let picker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
     let options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();

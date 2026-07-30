@@ -232,6 +232,25 @@ struct Index {
     }
   }
 
+  private async startSampleConvert(): Promise<void> {
+    if (this.isPicking) {
+      return;
+    }
+    this.showConvertActions = false;
+    this.isPicking = true;
+    try {
+      let media: PickedMedia = await MediaService.loadSampleVideo(this.abilityContext());
+      let params: ConvertParams = this.createConvertParams();
+      params.sourceUri = media.uri;
+      params.sourceName = this.settings.stealthNames ? '未命名素材' : media.name;
+      router.pushUrl({ url: 'pages/ConvertPage', params: params });
+    } catch (e) {
+      promptAction.showToast({ message: '示例视频载入失败', duration: 1800 });
+    } finally {
+      this.isPicking = false;
+    }
+  }
+
   private async closeSupportDialog(): Promise<void> {
     try {
       if (this.skipSupportSevenDays) {
@@ -516,43 +535,65 @@ struct Index {
           .onClick(() => { this.closeConvertActions(); })
 
         Column({ space: 10 }) {
-          Button({ type: ButtonType.Capsule, stateEffect: true }) {
-            Row({ space: 10 }) {
-              SymbolGlyph($r('sys.symbol.movie'))
-                .fontSize(21)
-                .fontColor([Theme.accent()])
-              Text('单个转换')
-                .fontSize(15)
-                .fontWeight(700)
-                .fontColor(Theme.textPrimary(this.colorMode === 0))
+          Row({ space: 8 }) {
+            Button({ type: ButtonType.Capsule, stateEffect: true }) {
+              Row({ space: 6 }) {
+                SymbolGlyph($r('sys.symbol.movie'))
+                  .fontSize(20)
+                  .fontColor([Theme.accent()])
+                Text('单个转换')
+                  .fontSize(14)
+                  .fontWeight(700)
+                  .fontColor(Theme.textPrimary(this.colorMode === 0))
+              }
             }
+            .width(124)
+            .height(50)
+            .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+            .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+            .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
+            .accessibilityText('选择一个视频转换')
+            .onClick(() => { this.startSingleConvert(); })
+
+            Button({ type: ButtonType.Capsule, stateEffect: true }) {
+              Row({ space: 6 }) {
+                SymbolGlyph($r('sys.symbol.circle_grid_2x2'))
+                  .fontSize(20)
+                  .fontColor([Theme.cyan()])
+                Text('批量转换')
+                  .fontSize(14)
+                  .fontWeight(700)
+                  .fontColor(Theme.textPrimary(this.colorMode === 0))
+              }
+            }
+            .width(124)
+            .height(50)
+            .backgroundColor(Theme.panelStrong(this.colorMode === 0))
+            .border({ width: 1, color: Theme.border(this.colorMode === 0) })
+            .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
+            .accessibilityText('选择多个视频批量转换')
+            .onClick(() => { this.startBatchConvert(); })
           }
-          .width(154)
-          .height(50)
-          .backgroundColor(Theme.panelStrong(this.colorMode === 0))
-          .border({ width: 1, color: Theme.border(this.colorMode === 0) })
-          .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
-          .accessibilityText('选择一个视频转换')
-          .onClick(() => { this.startSingleConvert(); })
+          .width(256)
 
           Button({ type: ButtonType.Capsule, stateEffect: true }) {
             Row({ space: 10 }) {
-              SymbolGlyph($r('sys.symbol.circle_grid_2x2'))
+              SymbolGlyph($r('sys.symbol.video_fill'))
                 .fontSize(21)
-                .fontColor([Theme.cyan()])
-              Text('批量转换')
+                .fontColor([Theme.accent()])
+              Text('示例视频')
                 .fontSize(15)
                 .fontWeight(700)
                 .fontColor(Theme.textPrimary(this.colorMode === 0))
             }
           }
-          .width(154)
+          .width(256)
           .height(50)
           .backgroundColor(Theme.panelStrong(this.colorMode === 0))
           .border({ width: 1, color: Theme.border(this.colorMode === 0) })
           .shadow({ radius: 16, color: 'rgba(0,0,0,0.12)', offsetX: 0, offsetY: 7 })
-          .accessibilityText('选择多个视频批量转换')
-          .onClick(() => { this.startBatchConvert(); })
+          .accessibilityText('使用内置示例视频转换')
+          .onClick(() => { this.startSampleConvert(); })
         }
         .position({ right: 22, bottom: 174 })
         .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 18 })))
